@@ -1,0 +1,65 @@
+{
+  "id": "pet",
+  "label": "Погладить",
+  "version": 1,
+  "fps": 20,
+  "durationFrames": 30,
+  "durationSeconds": 1.5,
+  "loop": true,
+  "coordinateSystem": {
+    "engine": "Three.js",
+    "front": "+Z",
+    "up": "+Y",
+    "motionDepth": 0.12
+  },
+  "handModel": {
+    "source": "../source/hand_Lowpoly.blend",
+    "object": "Plane005.001",
+    "scale": 1.05,
+    "centerGeometryBeforeAnimation": true,
+    "preRotation": [
+      { "axis": "Z", "radians": 1.5707963268 },
+      { "axis": "X", "radians": 1.4451326207 }
+    ],
+    "note": "Большой палец расположен перед шариком, сторона мизинца — за затылком. Ключевые вращения применяются к внешнему узлу руки поверх preRotation."
+  },
+  "cameraReference": {
+    "position": [0.3232, 1.37844, 7.87372],
+    "target": [0, 0, 0]
+  },
+  "interpolation": {
+    "position": "linear",
+    "rotation": "quaternion-slerp"
+  },
+  "keyframes": [
+    { "frame": 0, "position": [-0.52, 1.55, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 1, "position": [-0.52, 1.33604, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 2, "position": [-0.52, 1.09877, 0.12], "quaternion": [0, 0, 0.12553, 0.99209] },
+    { "frame": 3, "position": [-0.52, 0.95875, 0.12], "quaternion": [0, 0, 0.16536, 0.98623] },
+    { "frame": 5, "position": [-0.4132, 0.95875, 0.12], "quaternion": [0, 0, 0.12733, 0.99186] },
+    { "frame": 6, "position": [-0.36475, 0.95875, 0.12], "quaternion": [0, 0, 0.10021, 0.99497] },
+    { "frame": 7, "position": [-0.21056, 0.95875, 0.12], "quaternion": [0, 0, 0.07853, 0.99691] },
+    { "frame": 8, "position": [-0.08572, 1.02559, 0.12], "quaternion": [0, 0, 0.0103, 0.99995] },
+    { "frame": 9, "position": [0.05698, 1.02673, 0.12], "quaternion": [0, 0, -0.06994, 0.99755] },
+    { "frame": 10, "position": [0.2413, 0.99808, 0.12], "quaternion": [0, 0, -0.17205, 0.98509] },
+    { "frame": 11, "position": [0.4263, 0.95875, 0.12], "quaternion": [0, 0, -0.22215, 0.97501] },
+    { "frame": 12, "position": [0.5942, 0.8714, 0.12], "quaternion": [0, 0, -0.28688, 0.95797] },
+    { "frame": 13, "position": [0.75197, 0.76026, 0.12], "quaternion": [0, 0, -0.35699, 0.93411] },
+    { "frame": 14, "position": [0.55727, 1.08815, 0.12], "quaternion": [0, 0, -0.25382, 0.96725] },
+    { "frame": 15, "position": [0.27676, 1.23005, 0.12], "quaternion": [0, 0, -0.10559, 0.99441] },
+    { "frame": 16, "position": [-0.00162, 1.38259, 0.12], "quaternion": [0, 0, 0.01396, 0.9999] },
+    { "frame": 17, "position": [-0.36633, 1.17222, 0.12], "quaternion": [0, 0, 0.06869, 0.99764] },
+    { "frame": 18, "position": [-0.49892, 0.93695, 0.12], "quaternion": [0, 0, 0.16437, 0.9864] },
+    { "frame": 19, "position": [-0.3858, 0.976, 0.12], "quaternion": [0, 0, 0.0945, 0.99552] },
+    { "frame": 20, "position": [-0.24944, 1.02072, 0.12], "quaternion": [0, 0, 0.06032, 0.99818] },
+    { "frame": 21, "position": [-0.13062, 1.02072, 0.12], "quaternion": [0, 0, 0.01171, 0.99993] },
+    { "frame": 22, "position": [-0.0114, 1.02072, 0.12], "quaternion": [0, 0, -0.04003, 0.9992] },
+    { "frame": 23, "position": [0.2011, 1.02072, 0.12], "quaternion": [0, 0, -0.09725, 0.99526] },
+    { "frame": 24, "position": [0.38456, 0.97944, 0.12], "quaternion": [0, 0, -0.15276, 0.98826] },
+    { "frame": 25, "position": [0.5304, 0.9336, 0.12], "quaternion": [0, 0, -0.2482, 0.96871] },
+    { "frame": 26, "position": [0.5304, 0.9336, 0.12], "quaternion": [0, 0, -0.2482, 0.96871] },
+    { "frame": 27, "position": [0.5304, 0.9336, 0.12], "quaternion": [0, 0, -0.2482, 0.96871] },
+    { "frame": 28, "position": [0.5304, 0.9336, 0.12], "quaternion": [0, 0, -0.2482, 0.96871] },
+    { "frame": 29, "position": [0.5304, 0.9336, 0.12], "quaternion": [0, 0, -0.2482, 0.96871] }
+  ]
+}

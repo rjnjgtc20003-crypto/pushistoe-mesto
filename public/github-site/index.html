@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#16070d" />
+    <title>Пушистое место</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #16070d;
+      }
+
+      * { box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; }
+      body {
+        min-width: 320px;
+        background:
+          radial-gradient(circle at 50% 42%, rgba(116, 15, 38, .28) 0, rgba(31, 6, 15, .2) 36%, transparent 68%),
+          linear-gradient(165deg, #210811 0%, #10060b 58%, #070409 100%);
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      #stage { position: fixed; inset: 0; isolation: isolate; }
+      #stage::before {
+        position: absolute;
+        inset: 18% 9%;
+        z-index: -1;
+        content: "";
+        border-radius: 50%;
+        background: rgba(116, 9, 35, .16);
+        filter: blur(54px);
+        pointer-events: none;
+      }
+      canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+      .controls {
+        position: fixed;
+        left: 50%;
+        z-index: 10;
+        display: flex;
+        gap: 11px;
+        transform: translateX(-50%);
+      }
+      .controls-top { top: max(16px, env(safe-area-inset-top)); }
+      .controls-bottom { bottom: max(16px, env(safe-area-inset-bottom)); }
+      .control {
+        display: grid;
+        place-items: center;
+        width: 56px;
+        height: 52px;
+        padding: 0;
+        border: 1px solid rgba(255, 220, 225, .19);
+        border-radius: 18px;
+        background: linear-gradient(145deg, rgba(75, 19, 32, .82), rgba(29, 9, 17, .86));
+        box-shadow: inset 0 1px rgba(255, 255, 255, .09), 0 12px 32px rgba(0, 0, 0, .24);
+        color: rgba(255, 238, 240, .9);
+        font: 700 19px/1 inherit;
+        cursor: pointer;
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        transition: transform 140ms ease, border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      .control:active { transform: scale(.92); }
+      .control:focus-visible { outline: 3px solid rgba(255, 153, 171, .72); outline-offset: 3px; }
+      .control[aria-pressed="true"] {
+        border-color: rgba(255, 140, 158, .62);
+        background: linear-gradient(145deg, rgba(154, 20, 50, .9), rgba(54, 8, 22, .94));
+        box-shadow: inset 0 1px rgba(255, 255, 255, .13), 0 0 0 2px rgba(154, 20, 50, .18), 0 14px 34px rgba(102, 5, 28, .34);
+        color: #fff;
+      }
+      .control:disabled { opacity: .42; cursor: default; }
+
+      @media (max-height: 560px) {
+        .controls-top { top: max(9px, env(safe-area-inset-top)); }
+        .controls-bottom { bottom: max(9px, env(safe-area-inset-bottom)); }
+        .control { width: 50px; height: 45px; border-radius: 15px; font-size: 17px; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .control { transition: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <main id="stage">
+      <div class="controls controls-top" aria-label="Окраска шерсти">
+        <button class="control" type="button" data-color="1" aria-label="Пятнистая окраска" aria-pressed="true">1</button>
+        <button class="control" type="button" data-color="2" aria-label="Красная и чёрная половины слева направо" aria-pressed="false">2</button>
+        <button class="control" type="button" data-color="3" aria-label="Красная и чёрная половины сверху вниз" aria-pressed="false">3</button>
+      </div>
+
+      <canvas aria-label="Трёхмерный пушистый персонаж"></canvas>
+
+      <div class="controls controls-bottom" aria-label="Анимации">
+        <button class="control" type="button" data-action="pet" aria-label="Погладить" aria-pressed="false" disabled>1</button>
+        <button class="control" type="button" data-action="head-pat" aria-label="Похлопать по голове" aria-pressed="false" disabled>2</button>
+        <button class="control" type="button" data-action="squeeze" aria-label="Потискать" aria-pressed="false" disabled>3</button>
+      </div>
+    </main>
+
+    <script type="module" src="./scene.js"></script>
+  </body>
+</html>

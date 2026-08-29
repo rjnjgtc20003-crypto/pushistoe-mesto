@@ -1,0 +1,67 @@
+{
+  "id": "head-pat",
+  "label": "Похлопать по голове",
+  "version": 1,
+  "fps": 20,
+  "durationFrames": 30,
+  "durationSeconds": 1.5,
+  "loop": false,
+  "holdLastFrame": true,
+  "coordinateSystem": {
+    "engine": "Three.js",
+    "front": "+Z",
+    "up": "+Y",
+    "motionDepth": 0.12
+  },
+  "handModel": {
+    "source": "../source/hand_Lowpoly.blend",
+    "object": "Plane005.001",
+    "scale": 1.05,
+    "centerGeometryBeforeAnimation": true,
+    "preRotation": [
+      { "axis": "Z", "radians": 1.5707963268 },
+      { "axis": "X", "radians": 1.4451326207 }
+    ],
+    "note": "Ключевые вращения применяются к внешнему узлу руки поверх preRotation."
+  },
+  "cameraReference": {
+    "position": [0.3232, 1.37844, 7.87372],
+    "target": [0, 0, 0]
+  },
+  "interpolation": {
+    "position": "linear",
+    "rotation": "quaternion-slerp"
+  },
+  "keyframes": [
+    { "frame": 0, "position": [-0.05, 1.62, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 1, "position": [-0.05, 1.54088, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 2, "position": [-0.05, 1.39914, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 3, "position": [-0.05, 1.29777, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 4, "position": [-0.05, 1.21192, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 5, "position": [-0.05, 1.09129, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 6, "position": [-0.05, 0.98766, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 7, "position": [-0.05, 1.05093, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 8, "position": [-0.05, 1.07389, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 9, "position": [-0.05, 1.10273, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 10, "position": [-0.05, 1.0793, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 11, "position": [-0.05, 1.05052, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 12, "position": [-0.05, 0.98713, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 13, "position": [-0.05, 0.9755, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 14, "position": [-0.05, 1.00424, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 15, "position": [-0.05, 1.0618, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 16, "position": [-0.05, 1.07898, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 17, "position": [-0.05, 1.11911, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 18, "position": [-0.05, 1.09604, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 19, "position": [-0.05, 1.05547, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 20, "position": [-0.05, 1.01511, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 21, "position": [-0.05, 0.97468, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 22, "position": [-0.05, 0.96883, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 23, "position": [-0.05, 0.97407, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 24, "position": [-0.05, 0.97437, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 25, "position": [-0.05, 0.96863, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 26, "position": [-0.05, 0.97407, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 27, "position": [-0.05, 0.96852, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 28, "position": [-0.05, 0.95657, 0.12], "quaternion": [0, 0, 0, 1] },
+    { "frame": 29, "position": [-0.05, 0.95092, 0.12], "quaternion": [0, 0, 0, 1] }
+  ]
+}

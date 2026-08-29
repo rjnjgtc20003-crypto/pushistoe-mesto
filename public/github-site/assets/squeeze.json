@@ -1,0 +1,73 @@
+{
+  "id": "squeeze",
+  "label": "Потискать",
+  "version": 1,
+  "fps": 20,
+  "durationFrames": 38,
+  "durationSeconds": 1.9,
+  "loop": false,
+  "holdLastFrame": true,
+  "coordinateSystem": {
+    "engine": "Three.js",
+    "front": "+Z",
+    "up": "+Y"
+  },
+  "cameraReference": {
+    "position": [-0.06842, 1.10893, 7.92247],
+    "target": [0, 0, 0]
+  },
+  "interpolation": {
+    "position": "smoothstep",
+    "rotation": "quaternion-slerp",
+    "note": "Ручные промежуточные кадры очищены. Между смысловыми экстремумами используется плавное ускорение и торможение."
+  },
+  "furResponse": {
+    "enabled": false,
+    "note": "В этой анимации локальное пригибание и укорачивание шерсти отключено. Деформируется только общий объём персонажа.",
+    "bodySquashUses": "minimum pressure of the two palms"
+  },
+  "keyframes": [
+    {
+      "frame": 0,
+      "phase": "approach",
+      "left": { "position": [1.46981, 0.02, 0.79682], "quaternion": [0.03566, -0.44913, -0.67103, 0.58884] },
+      "right": { "position": [-1.65108, 0.02, 0.65189], "quaternion": [-0.03819, 0.45176, 0.70607, 0.54398] }
+    },
+    {
+      "frame": 11,
+      "phase": "squeeze-1",
+      "left": { "position": [0.90063, 0.02, 0.79682], "quaternion": [0.03566, -0.44913, -0.67103, 0.58884] },
+      "right": { "position": [-1.03039, 0.02, 0.65189], "quaternion": [-0.03819, 0.45176, 0.70607, 0.54398] }
+    },
+    {
+      "frame": 17,
+      "phase": "release-1",
+      "left": { "position": [1.08905, 0.02, 0.86057], "quaternion": [0.03566, -0.44913, -0.67103, 0.58884] },
+      "right": { "position": [-1.25197, 0.02, 0.65189], "quaternion": [-0.03819, 0.45176, 0.70607, 0.54398] }
+    },
+    {
+      "frame": 22,
+      "phase": "squeeze-2",
+      "left": { "position": [0.91996, 0.02, 0.86057], "quaternion": [0.03566, -0.44913, -0.67103, 0.58884] },
+      "right": { "position": [-1.07441, 0.02, 0.65189], "quaternion": [-0.03819, 0.45176, 0.70607, 0.54398] }
+    },
+    {
+      "frame": 27,
+      "phase": "release-2",
+      "left": { "position": [1.1296, 0.02, 0.86057], "quaternion": [0.03566, -0.44913, -0.67103, 0.58884] },
+      "right": { "position": [-1.19853, 0.02, 0.65189], "quaternion": [-0.03819, 0.45176, 0.70607, 0.54398] }
+    },
+    {
+      "frame": 32,
+      "phase": "squeeze-3",
+      "left": { "position": [0.98329, 0.02, 0.86057], "quaternion": [0.03566, -0.44913, -0.67103, 0.58884] },
+      "right": { "position": [-1.00625, 0.02, 0.65189], "quaternion": [-0.03819, 0.45176, 0.70607, 0.54398] }
+    },
+    {
+      "frame": 37,
+      "phase": "release-3",
+      "left": { "position": [1.13632, 0.02, 0.86057], "quaternion": [0.03566, -0.44913, -0.67103, 0.58884] },
+      "right": { "position": [-1.26832, 0.02, 0.65189], "quaternion": [-0.03819, 0.45176, 0.70607, 0.54398] }
+    }
+  ]
+}
