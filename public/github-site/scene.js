@@ -37,7 +37,7 @@ const creature = new THREE.Group();
 creature.position.y = -0.05;
 scene.add(creature);
 
-const radii = new THREE.Vector3(0.98, 0.92, 0.86);
+const radii = new THREE.Vector3(0.88, 0.82, 0.76);
 const blackBody = new THREE.Color(0x10090d);
 const redBody = new THREE.Color(0x7c071d);
 const cherryBody = new THREE.Color(0x4b0717);
@@ -101,15 +101,15 @@ for (let i = 0; i < hairCount; i += 1) {
   hairOffsets.push(surface.x, surface.y, surface.z);
   hairNormals.push(normal.x, normal.y, normal.z);
   hairPhases.push(i * 0.217);
-  hairLengths.push(undercoat ? 0.72 + 0.18 * wave : 1.06 + 0.3 * wave);
+  hairLengths.push(undercoat ? 0.78 + 0.2 * wave : 1.08 + 0.34 * wave);
   hairWidths.push((undercoat ? 0.82 : 0.68) + 0.2 * (0.5 + 0.5 * Math.cos(i * 7.31)));
   hairLeans.push(0.34 + 0.66 * (hashB - Math.floor(hashB)));
   hairShades.push(0.5 + 0.5 * Math.sin(i * 5.173 + y * 2.9));
   hairPattern.push(THREE.MathUtils.smoothstep(redPattern, 0.34, 0.7));
 }
 
-const baseHair = new THREE.ConeGeometry(0.0026, 0.28, 5, 4, false);
-baseHair.translate(0, 0.14, 0);
+const baseHair = new THREE.ConeGeometry(0.0026, 0.34, 5, 5, false);
+baseHair.translate(0, 0.17, 0);
 const furGeometry = new THREE.InstancedBufferGeometry();
 furGeometry.index = baseHair.index;
 furGeometry.setAttribute('position', baseHair.getAttribute('position'));
@@ -137,7 +137,9 @@ const furMaterial = new THREE.ShaderMaterial({
     uTouch1: { value: new THREE.Vector3(4, 4, 4) },
     uStrokeDir: { value: new THREE.Vector3(1, -0.08, 0).normalize() },
     uPressure: { value: 0 },
+    uInteractionMode: { value: 0 },
     uCheekSqueeze: { value: 0 },
+    uBodyRadii: { value: radii.clone() },
     uGradientMode: { value: 0 },
   },
   vertexShader: `
@@ -147,7 +149,9 @@ const furMaterial = new THREE.ShaderMaterial({
     uniform vec3 uTouch1;
     uniform vec3 uStrokeDir;
     uniform float uPressure;
+    uniform float uInteractionMode;
     uniform float uCheekSqueeze;
+    uniform vec3 uBodyRadii;
     uniform float uGradientMode;
     attribute vec3 aOffset;
     attribute vec3 aNormal;
@@ -168,29 +172,38 @@ const furMaterial = new THREE.ShaderMaterial({
       vec3 helper = abs(n.y) < 0.88 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
       vec3 tangent = normalize(cross(n, helper));
       vec3 bitangent = normalize(cross(n, tangent));
-      float along = clamp(position.y / 0.28, 0.0, 1.0);
+      float along = clamp(position.y / 0.34, 0.0, 1.0);
       float tip = along * along;
       float motion = 1.0 - uReducedMotion;
       float sway = sin(uTime * 1.18 + aPhase) * 0.021 * tip * motion;
       float crossSway = cos(uTime * 0.91 + aPhase * 0.67) * 0.013 * tip * motion;
-      float touch0 = 1.0 - smoothstep(0.13, 0.4, distance(aOffset, uTouch0));
-      float touch1 = 1.0 - smoothstep(0.12, 0.37, distance(aOffset, uTouch1));
+      float squeezeMode = step(1.5, uInteractionMode);
+      float spreadMode = step(0.5, uInteractionMode);
+      float contactEdge = mix(0.41, 0.47, squeezeMode);
+      float touch0 = 1.0 - smoothstep(0.12, contactEdge, distance(aOffset, uTouch0));
+      float touch1 = 1.0 - smoothstep(0.12, contactEdge, distance(aOffset, uTouch1));
       float contact = max(touch0, touch1) * uPressure;
       float longHair = smoothstep(0.72, 1.04, aLength);
-      float compressedLength = aLength * (1.0 - contact * mix(0.52, 0.72, longHair));
+      float compression = mix(0.3, 0.44, longHair) + spreadMode * 0.04 + squeezeMode * 0.05;
+      float compressedLength = aLength * (1.0 - contact * compression);
       vec3 brush = normalize(uStrokeDir + vec3(0.0001));
       vec3 strokeTangent = normalize(brush - n * dot(brush, n) + vec3(0.0001));
+      vec3 nearestTouch = touch0 >= touch1 ? uTouch0 : uTouch1;
+      vec3 fromTouch = aOffset - nearestTouch;
+      vec3 spreadTangent = normalize(fromTouch - n * dot(fromTouch, n) + tangent * 0.001);
+      vec3 bendDirection = normalize(mix(strokeTangent, spreadTangent, spreadMode) + vec3(0.0001));
       vec3 p = aOffset;
       p += n * (position.y * compressedLength);
       p += tangent * (position.x * aWidth + sway * (1.0 - contact));
       p += bitangent * (position.z * aWidth + crossSway * (1.0 - contact));
       p += (tangent * sin(aPhase) + bitangent * cos(aPhase)) * aLean * tip * aLength * 0.035;
-      p += strokeTangent * contact * tip * mix(0.045, 0.12, longHair);
-      p -= n * contact * tip * 0.035;
+      p += bendDirection * contact * tip * mix(0.075, 0.17, longHair) * mix(1.0, 1.12, squeezeMode);
+      p -= n * contact * tip * mix(0.028, 0.058, squeezeMode);
 
-      float cheekFront = smoothstep(0.24, 0.86, aOffset.z);
-      float cheekHeight = 1.0 - smoothstep(0.34, 0.82, abs(aOffset.y + 0.08));
-      float cheekSide = smoothstep(0.22, 0.68, abs(aOffset.x));
+      vec3 normalizedRoot = aOffset / uBodyRadii;
+      float cheekFront = smoothstep(0.25, 0.86, normalizedRoot.z);
+      float cheekHeight = 1.0 - smoothstep(0.36, 0.82, abs(normalizedRoot.y + 0.08));
+      float cheekSide = smoothstep(0.25, 0.72, abs(normalizedRoot.x));
       float cheekMask = cheekFront * cheekHeight * cheekSide;
       p.x *= 1.0 - uCheekSqueeze * 0.15 * cheekMask;
       p.z += uCheekSqueeze * 0.042 * cheekMask;
@@ -206,6 +219,7 @@ const furMaterial = new THREE.ShaderMaterial({
     }
   `,
   fragmentShader: `
+    uniform float uGradientMode;
     varying float vRed;
     varying float vLight;
     varying float vAlong;
@@ -426,18 +440,47 @@ function createHand(source, mirrored = false) {
 }
 
 function sampleTrack(keyframes, frame, hand, side = null, smooth = false) {
-  const before = [...keyframes].reverse().find((keyframe) => keyframe.frame <= frame) ?? keyframes[0];
-  const after = keyframes.find((keyframe) => keyframe.frame >= frame) ?? keyframes.at(-1);
+  let afterIndex = keyframes.findIndex((keyframe) => keyframe.frame >= frame);
+  if (afterIndex < 0) afterIndex = keyframes.length - 1;
+  if (afterIndex === 0) {
+    const first = side ? keyframes[0][side] : keyframes[0];
+    hand.position.fromArray(first.position);
+    hand.quaternion.fromArray(first.quaternion).normalize();
+    return;
+  }
+
+  const beforeIndex = afterIndex - 1;
+  const previousIndex = Math.max(0, beforeIndex - 1);
+  const nextIndex = Math.min(keyframes.length - 1, afterIndex + 1);
+  const before = keyframes[beforeIndex];
+  const after = keyframes[afterIndex];
+  const previous = keyframes[previousIndex];
+  const next = keyframes[nextIndex];
   const first = side ? before[side] : before;
   const second = side ? after[side] : after;
-  let amount = before.frame === after.frame ? 0 : (frame - before.frame) / (after.frame - before.frame);
-  if (smooth) amount = amount * amount * (3 - 2 * amount);
+  const previousValue = side ? previous[side] : previous;
+  const nextValue = side ? next[side] : next;
+  const segmentFrames = Math.max(after.frame - before.frame, 0.0001);
+  const amount = THREE.MathUtils.clamp((frame - before.frame) / segmentFrames, 0, 1);
   const firstPosition = new THREE.Vector3().fromArray(first.position);
   const secondPosition = new THREE.Vector3().fromArray(second.position);
+  const previousPosition = new THREE.Vector3().fromArray(previousValue.position);
+  const nextPosition = new THREE.Vector3().fromArray(nextValue.position);
+  const firstVelocity = secondPosition.clone().sub(previousPosition)
+    .multiplyScalar(segmentFrames / Math.max(after.frame - previous.frame, 0.0001));
+  const secondVelocity = nextPosition.clone().sub(firstPosition)
+    .multiplyScalar(segmentFrames / Math.max(next.frame - before.frame, 0.0001));
+  const amount2 = amount * amount;
+  const amount3 = amount2 * amount;
+  hand.position.copy(firstPosition).multiplyScalar(2 * amount3 - 3 * amount2 + 1)
+    .addScaledVector(firstVelocity, amount3 - 2 * amount2 + amount)
+    .addScaledVector(secondPosition, -2 * amount3 + 3 * amount2)
+    .addScaledVector(secondVelocity, amount3 - amount2);
+
+  const rotationAmount = smooth ? amount2 * (3 - 2 * amount) : amount;
   const firstQuaternion = new THREE.Quaternion().fromArray(first.quaternion).normalize();
   const secondQuaternion = new THREE.Quaternion().fromArray(second.quaternion).normalize();
-  hand.position.lerpVectors(firstPosition, secondPosition, amount);
-  hand.quaternion.copy(firstQuaternion).slerp(secondQuaternion, amount);
+  hand.quaternion.copy(firstQuaternion).slerp(secondQuaternion, rotationAmount);
 }
 
 function setActionButton(id) {
@@ -483,6 +526,7 @@ const previousContact = new THREE.Vector3();
 const leftContact = new THREE.Vector3();
 const rightContact = new THREE.Vector3();
 const movement = new THREE.Vector3(1, -0.08, 0);
+const settleDirection = new THREE.Vector3();
 let hasPreviousContact = false;
 
 function projectHandToFur(hand, target) {
@@ -499,6 +543,11 @@ function projectHandToFur(hand, target) {
 function smoothStep(edge0, edge1, value) {
   const amount = THREE.MathUtils.clamp((value - edge0) / (edge1 - edge0), 0, 1);
   return amount * amount * (3 - 2 * amount);
+}
+
+function settleHandIntoFur(hand, pressure, depth) {
+  settleDirection.copy(hand.position).sub(creature.position).normalize();
+  hand.position.addScaledVector(settleDirection, -pressure * depth);
 }
 
 function updateAction(time) {
@@ -520,25 +569,36 @@ function updateAction(time) {
       const leftPressure = 1 - smoothStep(0.18, 0.62, leftDistance);
       const rightPressure = 1 - smoothStep(0.18, 0.62, rightDistance);
       cheekSqueeze = Math.min(leftPressure, rightPressure);
+      settleHandIntoFur(leftHand, cheekSqueeze, 0.085);
+      settleHandIntoFur(rightHand, cheekSqueeze, 0.085);
+      projectHandToFur(leftHand, leftContact);
+      projectHandToFur(rightHand, rightContact);
       squeezeAmount = cheekSqueeze * 0.055;
-      furMaterial.uniforms.uPressure.value = 0;
+      furMaterial.uniforms.uTouch0.value.copy(leftContact);
+      furMaterial.uniforms.uTouch1.value.copy(rightContact);
+      furMaterial.uniforms.uPressure.value = cheekSqueeze * 0.92;
+      furMaterial.uniforms.uInteractionMode.value = 2;
       hasPreviousContact = false;
     } else {
       sampleTrack(animation.keyframes, frame, leftHand, null, smooth);
       const distance = projectHandToFur(leftHand, contactCenter);
       const contactPressure = 1 - smoothStep(0.18, 0.58, distance);
+      settleHandIntoFur(leftHand, contactPressure, id === 'head-pat' ? 0.065 : 0.05);
+      projectHandToFur(leftHand, contactCenter);
       headPatAmount = id === 'head-pat' ? contactPressure * 0.03 : 0;
       if (hasPreviousContact) {
         movement.copy(contactCenter).sub(previousContact);
         if (movement.lengthSq() > 0.00001) movement.normalize();
       }
-      secondContact.copy(contactCenter).addScaledVector(movement, -0.15);
+      secondContact.copy(contactCenter);
+      if (id === 'pet') secondContact.addScaledVector(movement, -0.16);
       previousContact.copy(contactCenter);
       hasPreviousContact = true;
       furMaterial.uniforms.uTouch0.value.copy(contactCenter);
       furMaterial.uniforms.uTouch1.value.copy(secondContact);
       furMaterial.uniforms.uStrokeDir.value.copy(movement);
       furMaterial.uniforms.uPressure.value = contactPressure;
+      furMaterial.uniforms.uInteractionMode.value = id === 'head-pat' ? 1 : 0;
     }
 
     if (elapsed >= animation.durationSeconds) {
@@ -547,10 +607,15 @@ function updateAction(time) {
       actionState = null;
       setActionButton(null);
       furMaterial.uniforms.uPressure.value = 0;
+      furMaterial.uniforms.uInteractionMode.value = 0;
       hasPreviousContact = false;
+      squeezeAmount = 0;
+      cheekSqueeze = 0;
+      headPatAmount = 0;
     }
   } else {
     furMaterial.uniforms.uPressure.value = 0;
+    furMaterial.uniforms.uInteractionMode.value = 0;
   }
 
   furMaterial.uniforms.uCheekSqueeze.value = cheekSqueeze;
