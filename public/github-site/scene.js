@@ -37,9 +37,10 @@ const creature = new THREE.Group();
 creature.position.y = -0.05;
 scene.add(creature);
 
-const radii = new THREE.Vector3(1.08, 1.02, 0.96);
+const radii = new THREE.Vector3(0.98, 0.92, 0.86);
 const blackBody = new THREE.Color(0x10090d);
 const redBody = new THREE.Color(0x7c071d);
+const cherryBody = new THREE.Color(0x4b0717);
 const bodyGeometry = new THREE.SphereGeometry(1, 80, 56);
 const bodyColors = new Float32Array(bodyGeometry.getAttribute('position').count * 3);
 bodyGeometry.setAttribute('color', new THREE.BufferAttribute(bodyColors, 3));
@@ -100,15 +101,15 @@ for (let i = 0; i < hairCount; i += 1) {
   hairOffsets.push(surface.x, surface.y, surface.z);
   hairNormals.push(normal.x, normal.y, normal.z);
   hairPhases.push(i * 0.217);
-  hairLengths.push(undercoat ? 0.64 + 0.14 * wave : 0.98 + 0.28 * wave);
+  hairLengths.push(undercoat ? 0.72 + 0.18 * wave : 1.06 + 0.3 * wave);
   hairWidths.push((undercoat ? 0.82 : 0.68) + 0.2 * (0.5 + 0.5 * Math.cos(i * 7.31)));
   hairLeans.push(0.34 + 0.66 * (hashB - Math.floor(hashB)));
   hairShades.push(0.5 + 0.5 * Math.sin(i * 5.173 + y * 2.9));
   hairPattern.push(THREE.MathUtils.smoothstep(redPattern, 0.34, 0.7));
 }
 
-const baseHair = new THREE.ConeGeometry(0.0026, 0.22, 5, 3, false);
-baseHair.translate(0, 0.11, 0);
+const baseHair = new THREE.ConeGeometry(0.0026, 0.28, 5, 4, false);
+baseHair.translate(0, 0.14, 0);
 const furGeometry = new THREE.InstancedBufferGeometry();
 furGeometry.index = baseHair.index;
 furGeometry.setAttribute('position', baseHair.getAttribute('position'));
@@ -137,6 +138,7 @@ const furMaterial = new THREE.ShaderMaterial({
     uStrokeDir: { value: new THREE.Vector3(1, -0.08, 0).normalize() },
     uPressure: { value: 0 },
     uCheekSqueeze: { value: 0 },
+    uGradientMode: { value: 0 },
   },
   vertexShader: `
     uniform float uTime;
@@ -146,6 +148,7 @@ const furMaterial = new THREE.ShaderMaterial({
     uniform vec3 uStrokeDir;
     uniform float uPressure;
     uniform float uCheekSqueeze;
+    uniform float uGradientMode;
     attribute vec3 aOffset;
     attribute vec3 aNormal;
     attribute float aPhase;
@@ -165,7 +168,7 @@ const furMaterial = new THREE.ShaderMaterial({
       vec3 helper = abs(n.y) < 0.88 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
       vec3 tangent = normalize(cross(n, helper));
       vec3 bitangent = normalize(cross(n, tangent));
-      float along = clamp(position.y / 0.22, 0.0, 1.0);
+      float along = clamp(position.y / 0.28, 0.0, 1.0);
       float tip = along * along;
       float motion = 1.0 - uReducedMotion;
       float sway = sin(uTime * 1.18 + aPhase) * 0.021 * tip * motion;
@@ -211,11 +214,12 @@ const furMaterial = new THREE.ShaderMaterial({
 
     void main() {
       vec3 blackFur = vec3(0.022, 0.006, 0.012);
-      vec3 redFur = vec3(0.48, 0.008, 0.055);
+      vec3 redFur = mix(vec3(0.48, 0.008, 0.055), vec3(0.23, 0.006, 0.038), uGradientMode);
+      vec3 redSheen = mix(vec3(0.085, 0.01, 0.02), vec3(0.038, 0.005, 0.012), uGradientMode);
       vec3 color = mix(blackFur, redFur, vRed) * vLight;
       color *= mix(0.7, 1.06, smoothstep(0.03, 0.7, vAlong));
       color *= mix(0.92, 1.08, vShade);
-      color += mix(vec3(0.012, 0.008, 0.011), vec3(0.085, 0.01, 0.02), vRed)
+      color += mix(vec3(0.012, 0.008, 0.011), redSheen, vRed)
         * pow(vRim, 2.4) * (0.18 + 0.34 * vAlong);
       gl_FragColor = vec4(color, 1.0);
     }
@@ -229,6 +233,9 @@ function applyColorMode(mode) {
   const hairColors = hairRedAttribute.array;
   const bodyPositions = bodyGeometry.getAttribute('position');
   const color = new THREE.Color();
+  const selectedRedBody = mode === 3 ? cherryBody : redBody;
+
+  furMaterial.uniforms.uGradientMode.value = mode === 3 ? 1 : 0;
 
   for (let i = 0; i < hairCount; i += 1) {
     const x = hairOffsets[i * 3];
@@ -242,7 +249,7 @@ function applyColorMode(mode) {
     const x = bodyPositions.getX(i);
     const y = bodyPositions.getY(i);
     const redness = mode === 1 ? 0 : mode === 2 ? (x < 0 ? 1 : 0) : THREE.MathUtils.smoothstep(y, -0.92, 0.92);
-    color.copy(blackBody).lerp(redBody, redness);
+    color.copy(blackBody).lerp(selectedRedBody, redness);
     bodyColors[i * 3] = color.r;
     bodyColors[i * 3 + 1] = color.g;
     bodyColors[i * 3 + 2] = color.b;
