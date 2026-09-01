@@ -179,12 +179,16 @@ const furMaterial = new THREE.ShaderMaterial({
       float crossSway = cos(uTime * 0.91 + aPhase * 0.67) * 0.013 * tip * motion;
       float squeezeMode = step(1.5, uInteractionMode);
       float spreadMode = step(0.5, uInteractionMode);
-      float contactEdge = mix(0.41, 0.47, squeezeMode);
+      float contactEdge = mix(0.41, 0.42, squeezeMode);
       float touch0 = 1.0 - smoothstep(0.12, contactEdge, distance(aOffset, uTouch0));
       float touch1 = 1.0 - smoothstep(0.12, contactEdge, distance(aOffset, uTouch1));
-      float contact = max(touch0, touch1) * uPressure;
+      float contact = pow(max(touch0, touch1), mix(1.0, 1.45, squeezeMode)) * uPressure;
       float longHair = smoothstep(0.72, 1.04, aLength);
-      float compression = mix(0.3, 0.44, longHair) + spreadMode * 0.04 + squeezeMode * 0.05;
+      float compression = mix(
+        mix(0.3, 0.44, longHair) + spreadMode * 0.04,
+        mix(0.18, 0.28, longHair),
+        squeezeMode
+      );
       float compressedLength = aLength * (1.0 - contact * compression);
       vec3 brush = normalize(uStrokeDir + vec3(0.0001));
       vec3 strokeTangent = normalize(brush - n * dot(brush, n) + vec3(0.0001));
@@ -197,17 +201,18 @@ const furMaterial = new THREE.ShaderMaterial({
       p += tangent * (position.x * aWidth + sway * (1.0 - contact));
       p += bitangent * (position.z * aWidth + crossSway * (1.0 - contact));
       p += (tangent * sin(aPhase) + bitangent * cos(aPhase)) * aLean * tip * aLength * 0.035;
-      p += bendDirection * contact * tip * mix(0.075, 0.17, longHair) * mix(1.0, 1.12, squeezeMode);
-      p -= n * contact * tip * mix(0.028, 0.058, squeezeMode);
+      float bendDistance = mix(mix(0.075, 0.17, longHair), mix(0.07, 0.13, longHair), squeezeMode);
+      p += bendDirection * contact * tip * bendDistance;
+      p -= n * contact * tip * mix(0.028, 0.025, squeezeMode);
 
       vec3 normalizedRoot = aOffset / uBodyRadii;
       float cheekFront = smoothstep(0.25, 0.86, normalizedRoot.z);
       float cheekHeight = 1.0 - smoothstep(0.36, 0.82, abs(normalizedRoot.y + 0.08));
       float cheekSide = smoothstep(0.25, 0.72, abs(normalizedRoot.x));
       float cheekMask = cheekFront * cheekHeight * cheekSide;
-      p.x *= 1.0 - uCheekSqueeze * 0.15 * cheekMask;
-      p.z += uCheekSqueeze * 0.042 * cheekMask;
-      p.y += uCheekSqueeze * 0.018 * cheekMask;
+      p.x *= 1.0 - uCheekSqueeze * 0.11 * cheekMask;
+      p.z += uCheekSqueeze * 0.028 * cheekMask;
+      p.y += uCheekSqueeze * 0.012 * cheekMask;
 
       gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
       vRed = aRed;
@@ -564,19 +569,17 @@ function updateAction(time) {
     if (id === 'squeeze') {
       sampleTrack(animation.keyframes, frame, leftHand, 'left', smooth);
       sampleTrack(animation.keyframes, frame, rightHand, 'right', smooth);
-      const leftDistance = projectHandToFur(leftHand, leftContact);
-      const rightDistance = projectHandToFur(rightHand, rightContact);
-      const leftPressure = 1 - smoothStep(0.18, 0.62, leftDistance);
-      const rightPressure = 1 - smoothStep(0.18, 0.62, rightDistance);
-      cheekSqueeze = Math.min(leftPressure, rightPressure);
-      settleHandIntoFur(leftHand, cheekSqueeze, 0.085);
-      settleHandIntoFur(rightHand, cheekSqueeze, 0.085);
+      const palmGap = Math.abs(leftHand.position.x - rightHand.position.x);
+      cheekSqueeze = 1 - smoothStep(1.86, 2.32, palmGap);
+      const palmConvergence = cheekSqueeze * 0.19;
+      leftHand.position.x -= palmConvergence;
+      rightHand.position.x += palmConvergence;
       projectHandToFur(leftHand, leftContact);
       projectHandToFur(rightHand, rightContact);
-      squeezeAmount = cheekSqueeze * 0.055;
+      squeezeAmount = cheekSqueeze * 0.08;
       furMaterial.uniforms.uTouch0.value.copy(leftContact);
       furMaterial.uniforms.uTouch1.value.copy(rightContact);
-      furMaterial.uniforms.uPressure.value = cheekSqueeze * 0.92;
+      furMaterial.uniforms.uPressure.value = cheekSqueeze * 0.68;
       furMaterial.uniforms.uInteractionMode.value = 2;
       hasPreviousContact = false;
     } else {
