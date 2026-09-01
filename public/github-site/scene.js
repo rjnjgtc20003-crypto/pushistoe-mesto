@@ -33,9 +33,13 @@ const coolRim = new THREE.PointLight(0x7d8ca8, 8, 7, 2);
 coolRim.position.set(-2.8, -1.6, 0.4);
 scene.add(coolRim);
 
+const interactionRig = new THREE.Group();
+interactionRig.rotation.order = 'YXZ';
+scene.add(interactionRig);
+
 const creature = new THREE.Group();
 creature.position.y = -0.05;
-scene.add(creature);
+interactionRig.add(creature);
 
 const radii = new THREE.Vector3(0.88, 0.82, 0.76);
 const blackBody = new THREE.Color(0x10090d);
@@ -440,7 +444,7 @@ function createHand(source, mirrored = false) {
   hand.add(handPose);
   hand.scale.set(mirrored ? -1.18 : 1.18, 1.18, 1.18);
   hand.visible = false;
-  scene.add(hand);
+  interactionRig.add(hand);
   return hand;
 }
 
@@ -627,6 +631,16 @@ function updateAction(time) {
 
 const pointer = new THREE.Vector2();
 const targetPointer = new THREE.Vector2();
+const activePointers = new Map();
+let dragPointerId = null;
+let lastDragX = 0;
+let lastDragY = 0;
+let lastPinchDistance = 0;
+let targetRigRotationX = 0;
+let targetRigRotationY = 0;
+let rigVelocityX = 0;
+let rigVelocityY = 0;
+let targetCameraZ = camera.position.z;
 
 function setPointer(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
@@ -634,12 +648,71 @@ function setPointer(clientX, clientY) {
   targetPointer.y = THREE.MathUtils.clamp(-(((clientY - rect.top) / rect.height) * 2 - 1), -1, 1);
 }
 
-canvas.addEventListener('pointermove', (event) => setPointer(event.clientX, event.clientY));
 canvas.addEventListener('pointerdown', (event) => {
   canvas.setPointerCapture(event.pointerId);
+  activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  canvas.classList.add('is-dragging');
   setPointer(event.clientX, event.clientY);
+  if (activePointers.size === 1) {
+    dragPointerId = event.pointerId;
+    lastDragX = event.clientX;
+    lastDragY = event.clientY;
+  } else {
+    const [first, second] = [...activePointers.values()];
+    lastPinchDistance = Math.hypot(second.x - first.x, second.y - first.y);
+  }
 });
-canvas.addEventListener('pointerleave', () => targetPointer.set(0, 0));
+
+canvas.addEventListener('pointermove', (event) => {
+  setPointer(event.clientX, event.clientY);
+  if (!activePointers.has(event.pointerId)) return;
+  activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+  if (activePointers.size === 1 && dragPointerId === event.pointerId) {
+    const deltaX = event.clientX - lastDragX;
+    const deltaY = event.clientY - lastDragY;
+    targetRigRotationY += deltaX * 0.009;
+    targetRigRotationX = THREE.MathUtils.clamp(targetRigRotationX + deltaY * 0.007, -0.72, 0.72);
+    rigVelocityY = prefersReducedMotion ? 0 : deltaX * 0.0018;
+    rigVelocityX = prefersReducedMotion ? 0 : deltaY * 0.0014;
+    lastDragX = event.clientX;
+    lastDragY = event.clientY;
+  } else if (activePointers.size >= 2) {
+    const [first, second] = [...activePointers.values()];
+    const pinchDistance = Math.hypot(second.x - first.x, second.y - first.y);
+    if (lastPinchDistance > 0) {
+      targetCameraZ = THREE.MathUtils.clamp(targetCameraZ - (pinchDistance - lastPinchDistance) * 0.012, 6.5, 9.6);
+    }
+    lastPinchDistance = pinchDistance;
+  }
+});
+
+function finishPointer(event) {
+  activePointers.delete(event.pointerId);
+  if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+
+  if (activePointers.size === 0) {
+    dragPointerId = null;
+    lastPinchDistance = 0;
+    canvas.classList.remove('is-dragging');
+    if (event.pointerType === 'touch') targetPointer.set(0, 0);
+    return;
+  }
+
+  if (activePointers.size === 1) {
+    const [remainingId, remaining] = [...activePointers.entries()][0];
+    dragPointerId = remainingId;
+    lastDragX = remaining.x;
+    lastDragY = remaining.y;
+    lastPinchDistance = 0;
+  }
+}
+
+canvas.addEventListener('pointerup', finishPointer);
+canvas.addEventListener('pointercancel', finishPointer);
+canvas.addEventListener('pointerleave', () => {
+  if (activePointers.size === 0) targetPointer.set(0, 0);
+});
 
 let nextBlink = 2.1;
 let blinkStarted = -1;
@@ -688,8 +761,16 @@ function animate() {
   mouth.scale.y = 1 + deformation.cheekSqueeze * 0.1;
   mouth.position.y = -0.19 + deformation.cheekSqueeze * 0.012;
 
-  creature.rotation.y = pointer.x * 0.075;
-  creature.rotation.x = -pointer.y * 0.035;
+  if (activePointers.size === 0 && !prefersReducedMotion) {
+    targetRigRotationX = THREE.MathUtils.clamp(targetRigRotationX + rigVelocityX, -0.72, 0.72);
+    targetRigRotationY += rigVelocityY;
+    rigVelocityX *= 0.91;
+    rigVelocityY *= 0.91;
+  }
+  interactionRig.rotation.x += (targetRigRotationX - interactionRig.rotation.x) * 0.14;
+  interactionRig.rotation.y += (targetRigRotationY - interactionRig.rotation.y) * 0.14;
+  camera.position.z += (targetCameraZ - camera.position.z) * 0.14;
+  camera.lookAt(0, 0, 0);
   const breathe = prefersReducedMotion ? 1 : 1 + Math.sin(time * 1.35) * 0.012;
   const squeezeX = 1 - deformation.squeezeAmount;
   const squeezeY = 1 + deformation.squeezeAmount * 0.72 - deformation.headPatAmount;
