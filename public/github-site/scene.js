@@ -60,9 +60,13 @@ const hairNormals = [];
 const hairPhases = [];
 const hairLengths = [];
 const hairWidths = [];
+const hairLeans = [];
+const hairShades = [];
 const hairPattern = [];
 const golden = Math.PI * (3 - Math.sqrt(5));
-const hairCount = 30000;
+const lowPowerDevice = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4)
+  || (navigator.deviceMemory && navigator.deviceMemory <= 4);
+const hairCount = lowPowerDevice ? 28000 : 36000;
 
 for (let i = 0; i < hairCount; i += 1) {
   const y = 1 - (2 * (i + 0.5)) / hairCount;
@@ -96,13 +100,15 @@ for (let i = 0; i < hairCount; i += 1) {
   hairOffsets.push(surface.x, surface.y, surface.z);
   hairNormals.push(normal.x, normal.y, normal.z);
   hairPhases.push(i * 0.217);
-  hairLengths.push(undercoat ? 0.58 + 0.16 * wave : 0.92 + 0.3 * wave);
-  hairWidths.push((undercoat ? 0.92 : 0.74) + 0.28 * (0.5 + 0.5 * Math.cos(i * 7.31)));
+  hairLengths.push(undercoat ? 0.64 + 0.14 * wave : 0.98 + 0.28 * wave);
+  hairWidths.push((undercoat ? 0.82 : 0.68) + 0.2 * (0.5 + 0.5 * Math.cos(i * 7.31)));
+  hairLeans.push(0.34 + 0.66 * (hashB - Math.floor(hashB)));
+  hairShades.push(0.5 + 0.5 * Math.sin(i * 5.173 + y * 2.9));
   hairPattern.push(THREE.MathUtils.smoothstep(redPattern, 0.34, 0.7));
 }
 
-const baseHair = new THREE.ConeGeometry(0.0036, 0.19, 4, 2, false);
-baseHair.translate(0, 0.095, 0);
+const baseHair = new THREE.ConeGeometry(0.0026, 0.22, 5, 3, false);
+baseHair.translate(0, 0.11, 0);
 const furGeometry = new THREE.InstancedBufferGeometry();
 furGeometry.index = baseHair.index;
 furGeometry.setAttribute('position', baseHair.getAttribute('position'));
@@ -113,6 +119,8 @@ furGeometry.setAttribute('aNormal', new THREE.InstancedBufferAttribute(new Float
 furGeometry.setAttribute('aPhase', new THREE.InstancedBufferAttribute(new Float32Array(hairPhases), 1));
 furGeometry.setAttribute('aLength', new THREE.InstancedBufferAttribute(new Float32Array(hairLengths), 1));
 furGeometry.setAttribute('aWidth', new THREE.InstancedBufferAttribute(new Float32Array(hairWidths), 1));
+furGeometry.setAttribute('aLean', new THREE.InstancedBufferAttribute(new Float32Array(hairLeans), 1));
+furGeometry.setAttribute('aShade', new THREE.InstancedBufferAttribute(new Float32Array(hairShades), 1));
 const hairRedAttribute = new THREE.InstancedBufferAttribute(new Float32Array(hairPattern), 1);
 hairRedAttribute.setUsage(THREE.DynamicDrawUsage);
 furGeometry.setAttribute('aRed', hairRedAttribute);
@@ -128,6 +136,7 @@ const furMaterial = new THREE.ShaderMaterial({
     uTouch1: { value: new THREE.Vector3(4, 4, 4) },
     uStrokeDir: { value: new THREE.Vector3(1, -0.08, 0).normalize() },
     uPressure: { value: 0 },
+    uCheekSqueeze: { value: 0 },
   },
   vertexShader: `
     uniform float uTime;
@@ -136,22 +145,27 @@ const furMaterial = new THREE.ShaderMaterial({
     uniform vec3 uTouch1;
     uniform vec3 uStrokeDir;
     uniform float uPressure;
+    uniform float uCheekSqueeze;
     attribute vec3 aOffset;
     attribute vec3 aNormal;
     attribute float aPhase;
     attribute float aLength;
     attribute float aWidth;
+    attribute float aLean;
+    attribute float aShade;
     attribute float aRed;
     varying float vRed;
     varying float vLight;
     varying float vAlong;
+    varying float vShade;
+    varying float vRim;
 
     void main() {
       vec3 n = normalize(aNormal);
       vec3 helper = abs(n.y) < 0.88 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
       vec3 tangent = normalize(cross(n, helper));
       vec3 bitangent = normalize(cross(n, tangent));
-      float along = clamp(position.y / 0.19, 0.0, 1.0);
+      float along = clamp(position.y / 0.22, 0.0, 1.0);
       float tip = along * along;
       float motion = 1.0 - uReducedMotion;
       float sway = sin(uTime * 1.18 + aPhase) * 0.021 * tip * motion;
@@ -167,11 +181,24 @@ const furMaterial = new THREE.ShaderMaterial({
       p += n * (position.y * compressedLength);
       p += tangent * (position.x * aWidth + sway * (1.0 - contact));
       p += bitangent * (position.z * aWidth + crossSway * (1.0 - contact));
+      p += (tangent * sin(aPhase) + bitangent * cos(aPhase)) * aLean * tip * aLength * 0.035;
       p += strokeTangent * contact * tip * mix(0.045, 0.12, longHair);
       p -= n * contact * tip * 0.035;
+
+      float cheekFront = smoothstep(0.24, 0.86, aOffset.z);
+      float cheekHeight = 1.0 - smoothstep(0.34, 0.82, abs(aOffset.y + 0.08));
+      float cheekSide = smoothstep(0.22, 0.68, abs(aOffset.x));
+      float cheekMask = cheekFront * cheekHeight * cheekSide;
+      p.x *= 1.0 - uCheekSqueeze * 0.15 * cheekMask;
+      p.z += uCheekSqueeze * 0.042 * cheekMask;
+      p.y += uCheekSqueeze * 0.018 * cheekMask;
+
       gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
       vRed = aRed;
       vAlong = along;
+      vShade = aShade;
+      vec3 worldRoot = (modelMatrix * vec4(aOffset, 1.0)).xyz;
+      vRim = 1.0 - abs(dot(n, normalize(cameraPosition - worldRoot)));
       vLight = 0.52 + 0.48 * max(0.0, dot(n, normalize(vec3(-0.7, 0.8, 1.0))));
     }
   `,
@@ -179,12 +206,17 @@ const furMaterial = new THREE.ShaderMaterial({
     varying float vRed;
     varying float vLight;
     varying float vAlong;
+    varying float vShade;
+    varying float vRim;
 
     void main() {
       vec3 blackFur = vec3(0.022, 0.006, 0.012);
       vec3 redFur = vec3(0.48, 0.008, 0.055);
       vec3 color = mix(blackFur, redFur, vRed) * vLight;
-      color += mix(vec3(0.008), vec3(0.09, 0.008, 0.018), vRed) * vAlong;
+      color *= mix(0.7, 1.06, smoothstep(0.03, 0.7, vAlong));
+      color *= mix(0.92, 1.08, vShade);
+      color += mix(vec3(0.012, 0.008, 0.011), vec3(0.085, 0.01, 0.02), vRed)
+        * pow(vRim, 2.4) * (0.18 + 0.34 * vAlong);
       gl_FragColor = vec4(color, 1.0);
     }
   `,
@@ -201,14 +233,15 @@ function applyColorMode(mode) {
   for (let i = 0; i < hairCount; i += 1) {
     const x = hairOffsets[i * 3];
     const y = hairOffsets[i * 3 + 1];
-    hairColors[i] = mode === 1 ? hairPattern[i] : mode === 2 ? (x < 0 ? 1 : 0) : (y > 0 ? 1 : 0);
+    const verticalGradient = THREE.MathUtils.smoothstep(y / radii.y, -0.92, 0.92);
+    hairColors[i] = mode === 1 ? hairPattern[i] : mode === 2 ? (x < 0 ? 1 : 0) : verticalGradient;
   }
   hairRedAttribute.needsUpdate = true;
 
   for (let i = 0; i < bodyPositions.count; i += 1) {
     const x = bodyPositions.getX(i);
     const y = bodyPositions.getY(i);
-    const redness = mode === 1 ? 0 : mode === 2 ? (x < 0 ? 1 : 0) : (y > 0 ? 1 : 0);
+    const redness = mode === 1 ? 0 : mode === 2 ? (x < 0 ? 1 : 0) : THREE.MathUtils.smoothstep(y, -0.92, 0.92);
     color.copy(blackBody).lerp(redBody, redness);
     bodyColors[i * 3] = color.r;
     bodyColors[i * 3 + 1] = color.g;
@@ -256,32 +289,69 @@ function makeEyeLayer(source, bounds, z) {
 makeEyeLayer('./assets/eye2.png', { x: 475, y: 337, w: 161, h: 91 }, 1.251);
 makeEyeLayer('./assets/eye1.png', { x: 549, y: 340, w: 87, h: 88 }, 1.253);
 
-const browOutlineMaterial = new THREE.MeshBasicMaterial({ color: 0x5f1322, transparent: true, opacity: 0.78 });
-const browMaterial = new THREE.MeshPhysicalMaterial({
-  color: 0x020103,
-  roughness: 0.48,
-  clearcoat: 0.42,
-  clearcoatRoughness: 0.32,
+const browGroup = new THREE.Group();
+creature.add(browGroup);
+const browUnderlayMaterial = new THREE.MeshPhysicalMaterial({
+  color: 0x080307,
+  roughness: 0.7,
+  clearcoat: 0.08,
 });
+const browMaterial = new THREE.MeshPhysicalMaterial({
+  color: 0x050204,
+  roughness: 0.56,
+  clearcoat: 0.16,
+  clearcoatRoughness: 0.58,
+  emissive: 0x120208,
+  emissiveIntensity: 0.14,
+});
+const browHairGeometry = new THREE.ConeGeometry(0.0054, 0.066, 5, 2, false);
+browHairGeometry.translate(0, 0.033, 0);
+const browUp = new THREE.Vector3(0, 1, 0);
+const browMatrix = new THREE.Matrix4();
+const browQuaternion = new THREE.Quaternion();
+const browScale = new THREE.Vector3();
 
-function makeBrow(points) {
+function browRandom(index, seed) {
+  const value = Math.sin((index + seed * 41.7) * 12.9898) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function makeBrow(points, seed) {
   const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal');
-  const outline = new THREE.Mesh(new THREE.TubeGeometry(curve, 20, 0.033, 8, false), browOutlineMaterial);
-  const brow = new THREE.Mesh(new THREE.TubeGeometry(curve, 20, 0.024, 8, false), browMaterial);
-  outline.position.z = -0.006;
-  creature.add(outline, brow);
+  const underlay = new THREE.Mesh(new THREE.TubeGeometry(curve, 24, 0.011, 6, false), browUnderlayMaterial);
+  underlay.position.z = -0.004;
+  browGroup.add(underlay);
+
+  const hairTotal = 38;
+  const hairs = new THREE.InstancedMesh(browHairGeometry, browMaterial, hairTotal);
+  for (let index = 0; index < hairTotal; index += 1) {
+    const t = (index + 0.25) / hairTotal;
+    const point = curve.getPoint(t);
+    const tangent = curve.getTangent(t).normalize();
+    const lift = (browRandom(index, seed) - 0.5) * 0.19;
+    const direction = tangent.clone().addScaledVector(browUp, lift).normalize();
+    point.x += (browRandom(index + 73, seed) - 0.5) * 0.018;
+    point.y += (browRandom(index + 151, seed) - 0.5) * 0.014;
+    point.z += (browRandom(index + 227, seed) - 0.5) * 0.012;
+    browQuaternion.setFromUnitVectors(browUp, direction);
+    browScale.set(0.82 + browRandom(index + 19, seed) * 0.38, 0.76 + browRandom(index + 37, seed) * 0.5, 1);
+    browMatrix.compose(point, browQuaternion, browScale);
+    hairs.setMatrixAt(index, browMatrix);
+  }
+  hairs.instanceMatrix.needsUpdate = true;
+  browGroup.add(hairs);
 }
 
 makeBrow([
   new THREE.Vector3(-0.52, 0.48, 1.278),
   new THREE.Vector3(-0.36, 0.53, 1.296),
   new THREE.Vector3(-0.13, 0.59, 1.282),
-]);
+], 1);
 makeBrow([
-  new THREE.Vector3(0.13, 0.59, 1.282),
-  new THREE.Vector3(0.36, 0.53, 1.296),
   new THREE.Vector3(0.52, 0.48, 1.278),
-]);
+  new THREE.Vector3(0.36, 0.53, 1.296),
+  new THREE.Vector3(0.13, 0.59, 1.282),
+], 2);
 
 function makeMouthTexture() {
   const mouthCanvas = document.createElement('canvas');
@@ -342,7 +412,7 @@ function createHand(source, mirrored = false) {
   const palmToSide = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI * 0.46);
   handPose.quaternion.copy(palmToSide).multiply(wristToRight);
   hand.add(handPose);
-  hand.scale.set(mirrored ? -1.05 : 1.05, 1.05, 1.05);
+  hand.scale.set(mirrored ? -1.18 : 1.18, 1.18, 1.18);
   hand.visible = false;
   scene.add(hand);
   return hand;
@@ -426,6 +496,7 @@ function smoothStep(edge0, edge1, value) {
 
 function updateAction(time) {
   let squeezeAmount = 0;
+  let cheekSqueeze = 0;
   let headPatAmount = 0;
 
   if (actionState) {
@@ -441,7 +512,8 @@ function updateAction(time) {
       const rightDistance = projectHandToFur(rightHand, rightContact);
       const leftPressure = 1 - smoothStep(0.18, 0.62, leftDistance);
       const rightPressure = 1 - smoothStep(0.18, 0.62, rightDistance);
-      squeezeAmount = Math.min(leftPressure, rightPressure) * 0.075;
+      cheekSqueeze = Math.min(leftPressure, rightPressure);
+      squeezeAmount = cheekSqueeze * 0.055;
       furMaterial.uniforms.uPressure.value = 0;
       hasPreviousContact = false;
     } else {
@@ -474,7 +546,8 @@ function updateAction(time) {
     furMaterial.uniforms.uPressure.value = 0;
   }
 
-  return { squeezeAmount, headPatAmount };
+  furMaterial.uniforms.uCheekSqueeze.value = cheekSqueeze;
+  return { squeezeAmount, cheekSqueeze, headPatAmount };
 }
 
 const pointer = new THREE.Vector2();
@@ -528,10 +601,17 @@ function animate() {
   const blink = blinkAmount(time);
 
   eyeGroups.forEach((eye, index) => {
-    eye.position.x = eye.userData.baseX + pointer.x * 0.012;
-    eye.position.y = eye.userData.baseY + pointer.y * 0.01;
-    eyeContents[index].scale.y = Math.max(0.055, 1 - blink * 0.945);
+    eye.position.x = eye.userData.baseX * (1 - deformation.cheekSqueeze * 0.1) + pointer.x * 0.012;
+    eye.position.y = eye.userData.baseY + deformation.cheekSqueeze * 0.022 + pointer.y * 0.01;
+    eyeContents[index].scale.x = 1 - deformation.cheekSqueeze * 0.055;
+    eyeContents[index].scale.y = Math.max(0.055, (1 - blink * 0.945) * (1 + deformation.cheekSqueeze * 0.075));
   });
+
+  browGroup.scale.x = 1 - deformation.cheekSqueeze * 0.09;
+  browGroup.scale.y = 1 + deformation.cheekSqueeze * 0.025;
+  mouth.scale.x = 1 - deformation.cheekSqueeze * 0.24;
+  mouth.scale.y = 1 + deformation.cheekSqueeze * 0.1;
+  mouth.position.y = -0.19 + deformation.cheekSqueeze * 0.012;
 
   creature.rotation.y = pointer.x * 0.075;
   creature.rotation.x = -pointer.y * 0.035;
