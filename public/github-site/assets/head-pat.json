@@ -14,15 +14,15 @@
     "motionDepth": 0.12
   },
   "handModel": {
-    "source": "../source/hand_Lowpoly.blend",
-    "object": "Plane005.001",
-    "scale": 1.05,
-    "centerGeometryBeforeAnimation": true,
+    "source": "procedural-articulated-hand based on hand_Lowpoly proportions",
+    "object": "ArticulatedHandRig",
+    "scale": 1.08,
+    "centerGeometryBeforeAnimation": false,
     "preRotation": [
       { "axis": "Z", "radians": 1.5707963268 },
       { "axis": "X", "radians": 1.4451326207 }
     ],
-    "note": "Ключевые вращения применяются к внешнему узлу руки поверх preRotation."
+    "note": "Ключевые вращения применяются к внешнему узлу руки, а запястье и суставы пальцев пружинят отдельно при контакте."
   },
   "cameraReference": {
     "position": [0.3232, 1.37844, 7.87372],
