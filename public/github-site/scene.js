@@ -1,4 +1,5 @@
 import * as THREE from 'https://esm.sh/three@0.180.0';
+import { OBJLoader } from 'https://esm.sh/three@0.180.0/examples/jsm/loaders/OBJLoader.js';
 
 const canvas = document.querySelector('canvas');
 const colorButtons = [...document.querySelectorAll('[data-color]')];
@@ -421,149 +422,81 @@ let rightHand = null;
 let actionState = null;
 const skinMaterial = new THREE.MeshPhysicalMaterial({
   color: 0xe8b39b,
-  roughness: 0.5,
-  clearcoat: 0.14,
-  clearcoatRoughness: 0.68,
-  sheen: 0.22,
+  roughness: 0.62,
+  clearcoat: 0.1,
+  clearcoatRoughness: 0.76,
+  sheen: 0.16,
   sheenColor: new THREE.Color(0xffd8c9),
   sheenRoughness: 0.82,
 });
-const nailMaterial = new THREE.MeshPhysicalMaterial({
-  color: 0xf3c7bd,
-  roughness: 0.38,
-  clearcoat: 0.32,
-  clearcoatRoughness: 0.48,
-});
-const handSphereGeometry = new THREE.SphereGeometry(1, 28, 20);
-const jointGeometry = new THREE.SphereGeometry(1, 18, 12);
+let handMaterialSequence = 0;
 
-function makeSoftPart(parent, geometry, material, position, scale, rotationZ = 0) {
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.fromArray(position);
-  mesh.scale.fromArray(scale);
-  mesh.rotation.z = rotationZ;
-  parent.add(mesh);
-  return mesh;
-}
-
-function makeFinger(parent, specification) {
-  const root = new THREE.Group();
-  root.position.set(specification.x, specification.y, specification.z ?? 0);
-  root.rotation.z = specification.splay;
-  parent.add(root);
-
-  const joints = [];
-  let current = root;
-  specification.lengths.forEach((length, index) => {
-    const radius = specification.radius * (1 - index * 0.12);
-    const joint = new THREE.Group();
-    current.add(joint);
-    joints.push(joint);
-
-    const segment = new THREE.Mesh(
-      new THREE.CapsuleGeometry(radius, Math.max(0.01, length - radius * 2), 8, 16),
-      skinMaterial,
-    );
-    segment.position.y = length * 0.5;
-    joint.add(segment);
-
-    makeSoftPart(joint, jointGeometry, skinMaterial, [0, 0, 0], [radius * 1.04, radius * 0.92, radius]);
-
-    if (index === specification.lengths.length - 1) {
-      const nail = makeSoftPart(
-        joint,
-        handSphereGeometry,
-        nailMaterial,
-        [0, length * 0.58, radius * 0.76],
-        [radius * 0.68, length * 0.24, radius * 0.16],
+function makeDeformableHandMaterial() {
+  const uniforms = {
+    uCurl: { value: 0 },
+    uCup: { value: 0 },
+  };
+  const material = skinMaterial.clone();
+  const materialKey = handMaterialSequence;
+  handMaterialSequence += 1;
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+uniform float uCurl;
+uniform float uCup;`,
+      )
+      .replace(
+        '#include <begin_vertex>',
+        `vec3 transformed = vec3(position);
+float fingerMask = smoothstep(-1.94, -1.28, position.y);
+float fingerProgress = smoothstep(-1.78, -1.19, position.y);
+float acrossPalm = clamp(abs((position.x + 0.84) / 0.34), 0.0, 1.0);
+float curlProfile = pow(fingerProgress, 1.35) * mix(1.08, 0.86, acrossPalm);
+transformed.z += uCurl * curlProfile * 0.19;
+transformed.y -= uCurl * curlProfile * 0.026;
+transformed.x += (-0.84 - position.x) * uCup * fingerMask * 0.065;
+transformed.z += uCup * fingerMask * (1.0 - acrossPalm) * 0.028;`,
       );
-      nail.rotation.x = -0.08;
-    }
-
-    const next = new THREE.Group();
-    next.position.y = length;
-    joint.add(next);
-    current = next;
-  });
-
-  return { root, joints, baseSplay: specification.splay };
+  };
+  material.customProgramCacheKey = () => `continuous-hand-${materialKey}`;
+  return { material, uniforms };
 }
 
-function makeArticulatedHandModel() {
-  const model = new THREE.Group();
-  model.position.x = 0.055;
-
-  makeSoftPart(model, handSphereGeometry, skinMaterial, [0, -0.12, 0], [0.34, 0.38, 0.14]);
-  makeSoftPart(model, handSphereGeometry, skinMaterial, [0, 0.13, 0.004], [0.325, 0.21, 0.145]);
-  makeSoftPart(model, handSphereGeometry, skinMaterial, [-0.255, -0.08, -0.006], [0.145, 0.235, 0.125], 0.38);
-  makeSoftPart(
-    model,
-    new THREE.CapsuleGeometry(0.135, 0.22, 10, 20),
-    skinMaterial,
-    [0.025, -0.5, 0],
-    [1.03, 1, 0.88],
-  );
-
-  const fingers = [
-    makeFinger(model, { x: -0.235, y: 0.17, splay: -0.075, radius: 0.066, lengths: [0.19, 0.175, 0.145] }),
-    makeFinger(model, { x: -0.08, y: 0.19, splay: -0.02, radius: 0.069, lengths: [0.205, 0.19, 0.155] }),
-    makeFinger(model, { x: 0.08, y: 0.18, splay: 0.035, radius: 0.067, lengths: [0.19, 0.175, 0.145] }),
-    makeFinger(model, { x: 0.225, y: 0.155, splay: 0.105, radius: 0.059, lengths: [0.165, 0.145, 0.12] }),
-  ];
-  const thumb = makeFinger(model, {
-    x: -0.285,
-    y: -0.11,
-    z: -0.018,
-    splay: 0.94,
-    radius: 0.076,
-    lengths: [0.19, 0.16, 0.125],
-  });
-  thumb.root.rotation.x = -0.2;
-
-  model.userData.fingers = fingers;
-  model.userData.thumb = thumb;
-  return model;
-}
-
-function createHand(mirrored = false) {
+function createHand(source, mirrored = false) {
   const hand = new THREE.Group();
   const wristPivot = new THREE.Group();
   const handPose = new THREE.Group();
-  const model = makeArticulatedHandModel();
+  const model = source.clone(true);
+  const { material, uniforms } = makeDeformableHandMaterial();
+  model.traverse((child) => {
+    if (child.isMesh) {
+      child.material = material;
+      child.geometry.computeVertexNormals();
+    }
+  });
   handPose.add(model);
   const wristToRight = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2);
   const palmToSide = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI * 0.46);
   handPose.quaternion.copy(palmToSide).multiply(wristToRight);
   wristPivot.add(handPose);
   hand.add(wristPivot);
-  hand.scale.set(mirrored ? -1.08 : 1.08, 1.08, 1.08);
+  hand.scale.set(mirrored ? -1.24 : 1.24, 1.24, 1.24);
   hand.userData.model = model;
   hand.userData.wristPivot = wristPivot;
   hand.userData.mirrored = mirrored;
+  hand.userData.deformUniforms = uniforms;
   hand.visible = false;
   interactionRig.add(hand);
   return hand;
 }
 
 function poseHand(hand, curl, cup, wristBend = 0) {
-  const { model, wristPivot, mirrored } = hand.userData;
-  const fingers = model.userData.fingers;
-  fingers.forEach((finger, index) => {
-    const outerFinger = Math.abs(index - 1.5) / 1.5;
-    const anatomicalCurl = [0.01, 0, 0.025, 0.065][index] * cup;
-    const fingerCurl = curl * (1 + outerFinger * cup * 0.18) + anatomicalCurl;
-    finger.root.rotation.z = finger.baseSplay * (1 + cup * 0.34);
-    finger.joints[0].rotation.x = -(0.045 + fingerCurl * 0.42);
-    finger.joints[1].rotation.x = -(0.035 + fingerCurl * 0.64);
-    finger.joints[2].rotation.x = -(0.025 + fingerCurl * 0.76);
-  });
-
-  const thumb = model.userData.thumb;
-  thumb.root.rotation.z = thumb.baseSplay - cup * 0.2;
-  thumb.root.rotation.x = -0.2 - cup * 0.12;
-  thumb.joints[0].rotation.x = -(0.08 + curl * 0.34);
-  thumb.joints[1].rotation.x = -(0.07 + curl * 0.5);
-  thumb.joints[2].rotation.x = -(0.04 + curl * 0.58);
+  const { wristPivot, mirrored, deformUniforms } = hand.userData;
+  deformUniforms.uCurl.value = curl;
+  deformUniforms.uCup.value = cup;
   wristPivot.rotation.z = wristBend * (mirrored ? -1 : 1);
   wristPivot.rotation.x = -cup * 0.035;
 }
@@ -633,13 +566,17 @@ function playAction(id) {
 actionButtons.forEach((button) => button.addEventListener('click', () => playAction(button.dataset.action)));
 
 async function loadHandsAndAnimations() {
-  const [pet, headPat, squeeze] = await Promise.all([
+  const [handText, pet, headPat, squeeze] = await Promise.all([
+    fetch('./assets/hand-smooth.obj').then((response) => response.text()),
     fetch('./assets/pet.json').then((response) => response.json()),
     fetch('./assets/head-pat.json').then((response) => response.json()),
     fetch('./assets/squeeze.json').then((response) => response.json()),
   ]);
-  leftHand = createHand(false);
-  rightHand = createHand(true);
+  const source = new OBJLoader().parse(handText);
+  const bounds = new THREE.Box3().setFromObject(source);
+  source.position.sub(bounds.getCenter(new THREE.Vector3()));
+  leftHand = createHand(source, false);
+  rightHand = createHand(source, true);
   animations.set('pet', pet);
   animations.set('head-pat', headPat);
   animations.set('squeeze', squeeze);

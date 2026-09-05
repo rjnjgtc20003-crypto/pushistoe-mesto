@@ -12,6 +12,17 @@
     "front": "+Z",
     "up": "+Y"
   },
+  "handModel": {
+    "source": "./hand-smooth.obj",
+    "object": "ContinuousSmoothedHand",
+    "scale": 1.24,
+    "centerGeometryBeforeAnimation": true,
+    "preRotation": [
+      { "axis": "Z", "radians": 1.5707963268 },
+      { "axis": "X", "radians": 1.4451326207 }
+    ],
+    "note": "Обе цельные сетки ладоней деформируются мягко и зеркально, без отдельных шарообразных суставов."
+  },
   "cameraReference": {
     "position": [-0.06842, 1.10893, 7.92247],
     "target": [0, 0, 0]
