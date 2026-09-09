@@ -13,8 +13,8 @@
     "motionDepth": 0.12
   },
   "handModel": {
-    "source": "./hand-smooth.obj",
-    "object": "ContinuousSmoothedHand",
+    "source": "./hand-rig.json",
+    "object": "AnatomicalHand",
     "scale": 1.24,
     "centerGeometryBeforeAnimation": true,
     "preRotation": [

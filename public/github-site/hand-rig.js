@@ -1,0 +1,54 @@
+import * as THREE from 'https://esm.sh/three@0.180.0';
+import { handPose, jointResponse } from './hand-poses.js';
+
+export function createHandMesh(data, material) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(data.positions, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(data.normals, 3));
+  geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(data.skinIndex, 4));
+  geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(data.skinWeight, 4));
+  geometry.setIndex(data.indices);
+  geometry.computeBoundingBox();
+  const mesh = new THREE.SkinnedMesh(geometry, material);
+  const bones = data.bones.map((info) => {
+    const bone = new THREE.Bone();
+    bone.name = info.name;
+    bone.position.fromArray(info.position);
+    bone.quaternion.fromArray(info.quaternion);
+    bone.userData.rest = bone.quaternion.clone();
+    bone.userData.angles = new THREE.Vector3();
+    return bone;
+  });
+  data.bones.forEach((info, i) => {
+    if (info.parent < 0) mesh.add(bones[i]);
+    else bones[info.parent].add(bones[i]);
+  });
+  mesh.updateMatrixWorld(true);
+  mesh.bind(new THREE.Skeleton(bones));
+  mesh.normalizeSkinWeights();
+  // The hand is tiny relative to the scene; avoid stale rest-pose culling.
+  mesh.frustumCulled = false;
+  const model = new THREE.Group();
+  model.add(mesh);
+  model.position.sub(geometry.boundingBox.getCenter(new THREE.Vector3()));
+  model.userData.mesh = mesh;
+  model.userData.bones = bones;
+  return model;
+}
+
+const rotation = new THREE.Euler();
+const deltaRotation = new THREE.Quaternion();
+export function articulateHand(model, gesture, pressure, phase, stroke, dt, snap = false) {
+  const pose = handPose(gesture, pressure, phase, stroke);
+  for (const bone of model.userData.bones) {
+    const target = pose[bone.name] ?? [0, 0, 0];
+    const a = snap ? 1 : 1 - Math.exp(-jointResponse(bone.name) * Math.min(dt, 0.05));
+    const angles = bone.userData.angles;
+    angles.x += (THREE.MathUtils.degToRad(target[0]) - angles.x) * a;
+    angles.y += (THREE.MathUtils.degToRad(target[1]) - angles.y) * a;
+    angles.z += (THREE.MathUtils.degToRad(target[2]) - angles.z) * a;
+    rotation.set(angles.x, angles.y, angles.z, 'XYZ');
+    deltaRotation.setFromEuler(rotation);
+    bone.quaternion.copy(bone.userData.rest).multiply(deltaRotation);
+  }
+}

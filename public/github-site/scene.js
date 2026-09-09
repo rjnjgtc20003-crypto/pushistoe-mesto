@@ -1,5 +1,5 @@
 import * as THREE from 'https://esm.sh/three@0.180.0';
-import { OBJLoader } from 'https://esm.sh/three@0.180.0/examples/jsm/loaders/OBJLoader.js';
+import { createHandMesh, articulateHand } from './hand-rig.js';
 
 const canvas = document.querySelector('canvas');
 const colorButtons = [...document.querySelectorAll('[data-color]')];
@@ -429,54 +429,11 @@ const skinMaterial = new THREE.MeshPhysicalMaterial({
   sheenColor: new THREE.Color(0xffd8c9),
   sheenRoughness: 0.82,
 });
-let handMaterialSequence = 0;
-
-function makeDeformableHandMaterial() {
-  const uniforms = {
-    uCurl: { value: 0 },
-    uCup: { value: 0 },
-  };
-  const material = skinMaterial.clone();
-  const materialKey = handMaterialSequence;
-  handMaterialSequence += 1;
-  material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, uniforms);
-    shader.vertexShader = shader.vertexShader
-      .replace(
-        '#include <common>',
-        `#include <common>
-uniform float uCurl;
-uniform float uCup;`,
-      )
-      .replace(
-        '#include <begin_vertex>',
-        `vec3 transformed = vec3(position);
-float fingerMask = smoothstep(-1.94, -1.28, position.y);
-float fingerProgress = smoothstep(-1.78, -1.19, position.y);
-float acrossPalm = clamp(abs((position.x + 0.84) / 0.34), 0.0, 1.0);
-float curlProfile = pow(fingerProgress, 1.35) * mix(1.08, 0.86, acrossPalm);
-transformed.z += uCurl * curlProfile * 0.19;
-transformed.y -= uCurl * curlProfile * 0.026;
-transformed.x += (-0.84 - position.x) * uCup * fingerMask * 0.065;
-transformed.z += uCup * fingerMask * (1.0 - acrossPalm) * 0.028;`,
-      );
-  };
-  material.customProgramCacheKey = () => `continuous-hand-${materialKey}`;
-  return { material, uniforms };
-}
-
 function createHand(source, mirrored = false) {
   const hand = new THREE.Group();
   const wristPivot = new THREE.Group();
   const handPose = new THREE.Group();
-  const model = source.clone(true);
-  const { material, uniforms } = makeDeformableHandMaterial();
-  model.traverse((child) => {
-    if (child.isMesh) {
-      child.material = material;
-      child.geometry.computeVertexNormals();
-    }
-  });
+  const model = createHandMesh(source, skinMaterial);
   handPose.add(model);
   const wristToRight = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2);
   const palmToSide = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI * 0.46);
@@ -487,18 +444,14 @@ function createHand(source, mirrored = false) {
   hand.userData.model = model;
   hand.userData.wristPivot = wristPivot;
   hand.userData.mirrored = mirrored;
-  hand.userData.deformUniforms = uniforms;
   hand.visible = false;
   interactionRig.add(hand);
   return hand;
 }
 
-function poseHand(hand, curl, cup, wristBend = 0) {
-  const { wristPivot, mirrored, deformUniforms } = hand.userData;
-  deformUniforms.uCurl.value = curl;
-  deformUniforms.uCup.value = cup;
-  wristPivot.rotation.z = wristBend * (mirrored ? -1 : 1);
-  wristPivot.rotation.x = -cup * 0.035;
+function poseHand(hand, pressure, phase = 0, stroke = 0, snap = false) {
+  articulateHand(hand.userData.model, actionState?.id ?? 'pet', pressure,
+    phase, stroke, handFrameDelta, snap);
 }
 
 function sampleTrack(keyframes, frame, hand, side = null, smooth = false) {
@@ -555,8 +508,8 @@ function playAction(id) {
   actionState = { id, animation, startedAt: clock.getElapsedTime() };
   hasPreviousContact = false;
   movement.set(1, -0.08, 0);
-  poseHand(leftHand, 0.12, 0.08, 0);
-  poseHand(rightHand, 0.12, 0.08, 0);
+  poseHand(leftHand, 0, 0, 0, true);
+  poseHand(rightHand, 0, 0, 0, true);
   leftHand.visible = true;
   rightHand.visible = id === 'squeeze';
   setActionButton(id);
@@ -566,15 +519,15 @@ function playAction(id) {
 actionButtons.forEach((button) => button.addEventListener('click', () => playAction(button.dataset.action)));
 
 async function loadHandsAndAnimations() {
-  const [handText, pet, headPat, squeeze] = await Promise.all([
-    fetch('./assets/hand-smooth.obj').then((response) => response.text()),
+  const [source, pet, headPat, squeeze] = await Promise.all([
+    fetch('./assets/hand-rig.json').then((response) => {
+      if (!response.ok) throw new Error('Hand rig could not be loaded');
+      return response.json();
+    }),
     fetch('./assets/pet.json').then((response) => response.json()),
     fetch('./assets/head-pat.json').then((response) => response.json()),
     fetch('./assets/squeeze.json').then((response) => response.json()),
   ]);
-  const source = new OBJLoader().parse(handText);
-  const bounds = new THREE.Box3().setFromObject(source);
-  source.position.sub(bounds.getCenter(new THREE.Vector3()));
   leftHand = createHand(source, false);
   rightHand = createHand(source, true);
   animations.set('pet', pet);
@@ -616,7 +569,11 @@ function settleHandIntoFur(hand, pressure, depth) {
   hand.position.addScaledVector(settleDirection, -pressure * depth);
 }
 
+let handFrameDelta = 1 / 60;
+let previousHandTime = 0;
 function updateAction(time) {
+  handFrameDelta = Math.min(0.05, Math.max(0, time - previousHandTime));
+  previousHandTime = time;
   let squeezeAmount = 0;
   let cheekSqueeze = 0;
   let headPatAmount = 0;
@@ -624,14 +581,17 @@ function updateAction(time) {
   if (actionState) {
     const { id, animation, startedAt } = actionState;
     const elapsed = time - startedAt;
-    const frame = Math.min(elapsed * animation.fps, animation.durationFrames - 1);
+    const gestureDuration = animation.durationSeconds * 1.3;
+    const frame = Math.min(elapsed * animation.fps / 1.3, animation.durationFrames - 1);
+    const phase = elapsed / gestureDuration;
+    const release = smoothStep(gestureDuration - 0.12, gestureDuration + 0.38, elapsed);
     const smooth = animation.interpolation?.position === 'smoothstep';
 
     if (id === 'squeeze') {
       sampleTrack(animation.keyframes, frame, leftHand, 'left', smooth);
       sampleTrack(animation.keyframes, frame, rightHand, 'right', smooth);
       const palmGap = Math.abs(leftHand.position.x - rightHand.position.x);
-      cheekSqueeze = 1 - smoothStep(1.86, 2.32, palmGap);
+      cheekSqueeze = (1 - smoothStep(1.86, 2.32, palmGap)) * (1 - release);
       const palmConvergence = cheekSqueeze * 0.19;
       leftHand.position.x -= palmConvergence;
       rightHand.position.x += palmConvergence;
@@ -642,13 +602,15 @@ function updateAction(time) {
       furMaterial.uniforms.uTouch1.value.copy(rightContact);
       furMaterial.uniforms.uPressure.value = cheekSqueeze * 0.68;
       furMaterial.uniforms.uInteractionMode.value = 2;
-      poseHand(leftHand, 0.12 + cheekSqueeze * 0.58, 0.15 + cheekSqueeze * 0.85, cheekSqueeze * 0.075);
-      poseHand(rightHand, 0.12 + cheekSqueeze * 0.58, 0.15 + cheekSqueeze * 0.85, cheekSqueeze * 0.075);
+      leftHand.position.x += release * 0.5;
+      rightHand.position.x -= release * 0.5;
+      poseHand(leftHand, cheekSqueeze, phase);
+      poseHand(rightHand, cheekSqueeze, phase);
       hasPreviousContact = false;
     } else {
       sampleTrack(animation.keyframes, frame, leftHand, null, smooth);
       const distance = projectHandToFur(leftHand, contactCenter);
-      const contactPressure = 1 - smoothStep(0.18, 0.58, distance);
+      const contactPressure = (1 - smoothStep(0.18, 0.58, distance)) * (1 - release);
       settleHandIntoFur(leftHand, contactPressure, id === 'head-pat' ? 0.065 : 0.05);
       projectHandToFur(leftHand, contactCenter);
       headPatAmount = id === 'head-pat' ? contactPressure * 0.03 : 0;
@@ -665,16 +627,11 @@ function updateAction(time) {
       furMaterial.uniforms.uStrokeDir.value.copy(movement);
       furMaterial.uniforms.uPressure.value = contactPressure;
       furMaterial.uniforms.uInteractionMode.value = id === 'head-pat' ? 1 : 0;
-      const fingerFollow = prefersReducedMotion ? 0 : Math.sin(frame * 0.42) * contactPressure * 0.025;
-      if (id === 'head-pat') {
-        const impactFlex = Math.max(0, -movement.y) * contactPressure * 0.045;
-        poseHand(leftHand, 0.08 + contactPressure * 0.24 + impactFlex, contactPressure * 0.34, movement.y * 0.045);
-      } else {
-        poseHand(leftHand, 0.16 + contactPressure * 0.2 + fingerFollow, 0.08 + contactPressure * 0.42, movement.x * 0.075);
-      }
+      poseHand(leftHand, contactPressure, prefersReducedMotion ? 0 : phase, id === 'pet' ? movement.x : 0);
+      leftHand.position.y += release * 0.6;
     }
 
-    if (elapsed >= animation.durationSeconds) {
+    if (elapsed >= gestureDuration + 0.4) {
       leftHand.visible = false;
       rightHand.visible = false;
       actionState = null;
