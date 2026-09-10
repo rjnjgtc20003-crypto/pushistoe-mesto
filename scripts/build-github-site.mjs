@@ -11,7 +11,7 @@ async function visit(directory) {
   for(const entry of await fs.readdir(directory,{withFileTypes:true})) {
     const filename=path.join(directory,entry.name);
     if(entry.isDirectory())await visit(filename);
-    else if(entry.isFile())files.push(path.relative(source,filename));
+    else if(entry.isFile())files.push(path.relative(source,filename).replaceAll(path.sep,'/'));
   }
 }
 await visit(source);
@@ -21,7 +21,7 @@ const contents=new Map();
 for(const name of files) {
   let data=await fs.readFile(path.join(source,name));
   // Git's Windows CRLF checkout must produce the same revision as Linux CI.
-  if(/\.(js|html|json|css|svg|md|txt)$/.test(name))data=Buffer.from(data.toString('utf8').replaceAll('\r\n','\n'));
+  if(/\.(js|html|json|css|svg|md|txt|obj)$/.test(name))data=Buffer.from(data.toString('utf8').replaceAll('\r\n','\n'));
   contents.set(name,data);
   digest.update(name.replaceAll(path.sep,'/')).update('\0').update(data);
 }
