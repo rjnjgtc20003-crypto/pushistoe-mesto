@@ -289,3 +289,73 @@ all three actions at phone viewport size. It still does not test real phones.
 
 Authored keyframe arrays are preserved. The pet playback metadata documents the
 new controller; it does not replace or reinterpret the user's archived keys.
+
+## Body-level contact and palmar cupping, revision 7
+
+The user's observation was confirmed on the final skin, without the fur renderer:
+in revision 6 the central palm's median radial gap during petting was about 0.061
+scene units, while the index and middle fingers were about 0.246 and 0.170 units
+away. These are gaps to the body, not to the outer coat. A palm-only test had been
+too permissive and did not require each finger to reach the underlying surface.
+
+### Changes
+
+- Petting's loaded palm target is now 0.017 units above the body instead of 0.045;
+  patting reaches 0.021 instead of 0.043–0.048. A thin compressed-coat allowance
+  remains: the skin does not need to intersect the core to convey contact.
+- First establish broad palm support, then fit each digit's actual skinned pads
+  to the body. Bounded MCP/PIP/DIP flexion is coupled, mostly at the knuckle, with
+  maximum PIP/DIP angles of 12/8 degrees to avoid a hooked grasp. Thumb fitting
+  uses its own CMC/MCP/IP chain. Limits are artistic constraints, not measured
+  anatomical maxima or a motion-capture result. The fit responds to body radius,
+  body deformation and current hand pose, independently of fur visibility.
+- A final skin guard and continuous support activation prevent fingers from
+  propping the palm up or making contact start with an abrupt positional stop.
+  The signed exit from the deformed cheek is evaluated on both sides of contact;
+  discarding samples just outside it had created an acceleration discontinuity.
+- Two strokes, the airborne return and visible fingertip/cuff balance remain.
+  End-angle calibration changed only from 0.400 to 0.405 radians to account for
+  the new fitted finger silhouette; the user's illustrative angles are not used.
+- Squeeze approach/release offsets are shorter: outer normal offset 0.20 instead
+  of 0.48, forward offset 0.12 instead of 0.38, and no additional lateral offset.
+  Between presses, normal release is 0.045 instead of 0.105 units. The palms stay
+  near the cheeks and retain the viewer-facing wrist direction.
+- Squeezing now changes the transverse palm arch (more on the little-finger side)
+  as well as wrist extension/deviation. Ring/little metacarpal pivots were moved
+  proximally before binding, with child compensation: the neutral mesh and MCP
+  positions are unchanged, but the bend no longer pivots in the distal palm.
+
+### Anatomical basis and limits
+
+[Buffi, Crisco & Murray (2013), *A Method for Defining Carpometacarpal Joint
+Kinematics from Three-Dimensional Rotations of the Metacarpal Bones Captured In
+Vivo Using Computed Tomography*](https://pmc.ncbi.nlm.nih.gov/articles/PMC3788642/)
+models fourth/fifth CMC movement as a coupled metacarpal arch, rather than treating
+the palm as one rigid plate. It used one participant in seven static postures:
+it supports the joint mechanism, not universal angles for cheek squeezing.
+[Metacarpal Arc Motion: Comparison of Different Measurement Methods](https://pmc.ncbi.nlm.nih.gov/articles/PMC8898165/)
+also describes coupled flexion and rotation in these joints. The procedural rig
+applies this distinction between palm cupping, knuckle flexion and wrist motion;
+its weights and joint placements are still an approximation of the supplied mesh.
+
+### Verification
+
+- Stricter full-skin petting tests require central-palm median gap below 0.05,
+  heel below 0.03, each finger's closest pad below 0.025, and the thumb below 0.05.
+  Patting central-palm median is below 0.045 at settled pressure, around 0.039.
+  These scene-unit tolerances describe compressed coat and skin shape, not mm.
+- `check-finger-conformity.mjs` verifies body-only contact, adaptation to smaller
+  and larger radii, converged 30/60/120 Hz equivalence, resetting the fitted pose,
+  proximal palm pivots and distinct ulnar cupping. Existing tests still check the
+  entire mesh for body penetration, symmetry, visible staging and view invariance.
+- Joint-excursion checks now inspect final fitted angles rather than free-pose
+  targets. Middle/ring DIP excursions are about 2.8 degrees, with larger motion
+  at MCP/PIP; the test no longer mistakes an animated target for animated skin.
+- Headless Chrome contact previews include bare-body and fur-on views from four
+  directions. Browser timing covers complete gestures and a 390x844 DPR3 viewport
+  on a desktop Intel GPU; it is not a physical iPhone/Android performance test.
+
+This is not a full hand/skin/strand physics simulation. The existing persistent
+fur field follows the newly fitted skin, but its coarse local collision planes
+can still leave individual strands crossing finger edges. Face, colors, hand
+scale and archived user-authored animation frames are unchanged.

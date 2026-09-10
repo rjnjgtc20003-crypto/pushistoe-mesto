@@ -33,12 +33,12 @@ for(let i=0;i<data.positions.length/3;i++){
 const target=new THREE.Vector3(),outward=new THREE.Vector3(),center=new THREE.Vector3(),facing=new THREE.Vector3(),v=new THREE.Vector3(),along=new THREE.Vector3();
 const summaries=[];
 const camera=new THREE.PerspectiveCamera(31,1050/900,.1,50);camera.position.set(-.068,1.109,7.922);camera.lookAt(0,0,0);camera.updateMatrixWorld(true);
-for(const id of Object.keys(CONTACT_DURATIONS)){
+for(const id of Object.keys(CONTACT_DURATIONS).filter(id=>!process.env.CONTACT_GESTURE||id===process.env.CONTACT_GESTURE)){
   hands.forEach(hand=>{hand.userData.supportOffset=0;});
   const duration=CONTACT_DURATIONS[id],dt=1/120,field=new FurResponseField(radii.toArray());
   let minimum=Infinity,maxMedian=0,maxSupport=0,maxSpeed=0,maxAcceleration=0,maxAngular=0,maxAsymmetry=0,accelerationTime=0;
   const previous=[],velocity=[];
-  const rows=[];
+  const rows=[],trace=[];
   for(let step=0;step<=Math.round(duration/dt);step++){
     const t=step*dt,g=sampleContactGesture(id,t),breathe=1+Math.sin(t*1.35)*.012;
     const scale=new THREE.Vector3((1-g.squeeze)/breathe,(1+g.squeeze*.72-g.pat)*breathe,(1+g.squeeze*.35+g.pat*.45)/breathe);
@@ -54,7 +54,11 @@ for(const id of Object.keys(CONTACT_DURATIONS)){
       outward.divide(scale).normalize();
       along.fromArray(p.fingerDirection).multiply(scale).normalize();
       placePalm(hand,target,outward,center,facing,along);
-      maxSupport=Math.max(maxSupport,supportPalm(hand,bodyCenter,support,outward,center,facing,dt,cheeks));
+      const totalSupport=supportPalm(hand,bodyCenter,support,outward,center,facing,dt,cheeks);
+      maxSupport=Math.max(maxSupport,totalSupport);
+      trace.push({t,hand:h,pressure:g.pressure,totalSupport,palmSupport:hand.userData.supportOffset,position:hand.position.toArray(),
+        supportVertices:[hand.userData.palmSupportVertex,hand.userData.guardSupportVertex].map(i=>i===null?null:data.positions.slice(i*3,i*3+3)),
+        flex:model.userData.bones.filter(b=>b.name.endsWith('_mcp')).map(b=>b.userData.contactFlex??b.userData.angles.x)});
       palms.push(center.clone());
       if(id==='squeeze'&&g.pressure>.9){
         const cuff=model.userData.bones.find(b=>b.name==='forearm').getWorldPosition(new THREE.Vector3()).sub(center).normalize();
@@ -98,14 +102,22 @@ for(const id of Object.keys(CONTACT_DURATIONS)){
           maxMedian=Math.max(maxMedian,median);
           assert.ok(median<.10,`${id}: palm is floating at ${t}s (${median}); support ${hand.userData.supportOffset}; hand ${h}; minimum ${gaps[0]}; supporting skin ${data.positions.slice(hand.userData.supportVertex*3,hand.userData.supportVertex*3+3)}`);
           assert.ok(gaps.filter(x=>x<.12).length/gaps.length>.7,'Only fingers touch');
+          if(id==='head-pat'&&g.pressure>.999)assert.ok(median<.045,'Pat still stops above the compressed coat');
+          if(id==='squeeze')assert.ok(median<.07,'Cupped palm floats above the cheek');
         }
         rows.push({t,hand:h,pressure:g.pressure,median,palm:saved.toArray()});
+      }
+      if(id==='squeeze'){
+        assert.ok(Math.abs(center.x)<.93,'Squeeze hands withdraw too far sideways');
+        if(t>=1&&t<=3.2)assert.ok(Math.abs(center.x)<.8,'Hands leave the cheeks between presses');
       }
     }
     if(palms.length===2)maxAsymmetry=Math.max(maxAsymmetry,Math.abs(palms[0].x+palms[1].x));
     if(step%2===0)field.updateContacts(1/60,contacts);
   }
   console.log(JSON.stringify({id,minimum,maxMedian,maxSupport,maxSpeed,maxAcceleration,maxAngular,maxAsymmetry,accelerationTime}));
+  fs.mkdirSync('outputs/body-contact',{recursive:true});
+  fs.writeFileSync(`outputs/body-contact/${id}-trace.json`,JSON.stringify(trace));
   assert.ok(minimum>.995,`${id}: hand entered body (${minimum})`);
   assert.ok(maxAsymmetry<.008,`Asymmetric squeezing (${maxAsymmetry})`);
   assert.ok(maxSpeed<2.2&&maxAcceleration<15&&maxAngular<1.6,`${id}: abrupt motion ${maxSpeed}, ${maxAcceleration} at ${accelerationTime}, ${maxAngular}`);

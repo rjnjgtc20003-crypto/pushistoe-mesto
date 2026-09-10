@@ -54,10 +54,12 @@ for(let step=0;step<=Math.round(STROKE_DURATION*120);step++) {
   // Artistic regression tolerances in scene units, not biological standards.
   // Unlike the clearance test, these FAIL when only fingers support the hand.
   if(s.pressure>.99){
-    assert.ok(gaps.palm.median<.08,`Palm floats at ${t}s: ${gaps.palm.median}`);
-    assert.ok(gaps.palm.near>.72,`Insufficient broad palm support at ${t}s`);
-    assert.ok(gaps.heel.min<.055,`Palm heel lost support at ${t}s`);
-    assert.ok(gaps.knuckles.min<.075,`Knuckle pads lost support at ${t}s`);
+    assert.ok(gaps.palm.median<.05,`Palm floats at ${t}s: ${gaps.palm.median}`);
+    assert.ok(gaps.palm.near>.9,`Insufficient broad palm support at ${t}s`);
+    assert.ok(gaps.heel.min<.03,`Palm heel lost support at ${t}s`);
+    assert.ok(gaps.knuckles.min<.05,`Knuckle pads lost support at ${t}s`);
+    for(const finger of ['index','middle','ring','little'])assert.ok(gaps[finger].min<.025,`${finger} floats at ${t}s`);
+    assert.ok(gaps.thumb.min<.05,`Thumb floats at ${t}s`);
   }
   rows.push({t,support:hand.userData.supportOffset,palm:center.toArray(),gaps,vertices});
   console.log(JSON.stringify({t,support:+hand.userData.supportOffset.toFixed(4),gaps}));

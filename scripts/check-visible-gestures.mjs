@@ -37,7 +37,10 @@ for(let step=0;step<=Math.round(STROKE_DURATION/dt);step++){
   }
   previous={position:hand.position.clone(),quaternion:hand.quaternion.clone(),x:center.x,pass:s.pass,returning:s.returning};
   for(const b of model.userData.bones){
-    const range=bones.get(b.name)??[Infinity,-Infinity];range[0]=Math.min(range[0],b.userData.angles.x);range[1]=Math.max(range[1],b.userData.angles.x);bones.set(b.name,range);
+    const angle=b.userData.contactFlex??b.userData.angles.x;
+    const range=bones.get(b.name)??[Infinity,-Infinity];range[0]=Math.min(range[0],angle);range[1]=Math.max(range[1],angle);bones.set(b.name,range);
+    if(b.name.endsWith('_pip'))assert.ok(angle<THREE.MathUtils.degToRad(12.01),'Finger hooks instead of conforming');
+    if(b.name.endsWith('_dip'))assert.ok(angle<THREE.MathUtils.degToRad(8.01),'Fingertip hooks instead of conforming');
   }
   if(step%6!==0)continue;
   let minX=Infinity,maxX=-Infinity,topPx=Infinity;const tip=new THREE.Vector3(),cuff=new THREE.Vector3();let tipN=0,cuffN=0;
@@ -71,6 +74,8 @@ for(const start of [0,PASS_DURATION+RETURN_DURATION]){
   }
 }
 for(const name of ['index_dip','middle_dip','ring_dip','little_dip']){
-  const range=bones.get(name);assert.ok((range[1]-range[0])*180/Math.PI>3,'A distal finger joint is frozen');
+  // Measure the final contact-fitted joints, not only their free-pose targets.
+  // Conformity limits the middle/ring DIP excursion to about 2.8 degrees.
+  const range=bones.get(name);assert.ok((range[1]-range[0])*180/Math.PI>2.5,'A distal finger joint is frozen');
 }
 console.log('PASS: projected fingertip/cuff symmetry in both passes; changing distal joints; whole-mesh body clearance; airborne return.');

@@ -47,6 +47,14 @@ export function createHandMesh(data, material) {
     if (info.parent < 0) mesh.add(bones[i]);
     else bones[info.parent].add(bones[i]);
   });
+  // Move the ulnar metacarpal pivots toward the carpus. Compensate the child
+  // positions before binding: neutral skin is unchanged, but cupping no longer
+  // hinges halfway along the palm. The fitted MCP centres stay exactly put.
+  for(const name of ['ring_palm','little_palm']){
+    const bone=bones.find(b=>b.name===name),shift=new THREE.Vector3(0,-.16,0);
+    bone.position.add(shift.clone().applyQuaternion(bone.quaternion));
+    for(const child of bone.children)child.position.sub(shift);
+  }
   mesh.updateMatrixWorld(true);
   mesh.bind(new THREE.Skeleton(bones));
   mesh.normalizeSkinWeights();
@@ -80,6 +88,24 @@ export function createHandMesh(data, material) {
     if(old===undefined||z>data.positions[old*3+2])pads.set(cell,i);
   }
   model.userData.contactSamples=[...pads.values()];
+  const digitSamples={index:[],middle:[],ring:[],little:[],thumb:[]};
+  const palmSupport=[];
+  for(const i of model.userData.contactSamples){
+    const y=data.positions[i*3+1];
+    let strongest=0;
+    for(let j=1;j<4;j++)if(data.skinWeight[i*4+j]>data.skinWeight[i*4+strongest])strongest=j;
+    const name=data.bones[data.skinIndex[i*4+strongest]].name.split('_')[0];
+    if(name==='thumb'&&y> -1.80)digitSamples.thumb.push(i);
+    else if(name in digitSamples&&name!=='thumb'&&y> -1.57)digitSamples[name].push(i);
+    else palmSupport.push(i);
+  }
+  model.userData.palmSupport=palmSupport;
+  model.userData.digitSamples=digitSamples;
+  model.userData.contactChains=Object.entries(digitSamples).map(([name,indices])=>{
+    const thumb=name==='thumb',labels=thumb?['cmc','mcp','ip']:['mcp','pip','dip'];
+    return {indices,bones:labels.map(s=>bones.find(b=>b.name===`${name}_${s}`)),
+      maximum:(thumb?[24,12,7]:[40,12,8]).map(THREE.MathUtils.degToRad)};
+  });
   // Fur can reach the wrist and sides even when they do not support the body.
   // Keep this coverage separate from the load-bearing palm contact samples.
   const coatPads=new Map();
@@ -97,6 +123,8 @@ export function createHandMesh(data, material) {
 const rotation = new THREE.Euler();
 const deltaRotation = new THREE.Quaternion();
 export function articulateHand(model, gesture, pressure, phase, stroke, dt, snap = false) {
+  model.userData.contactPressure=Math.max(0,Math.min(1,pressure));
+  model.userData.contactGesture=gesture;
   const pose = handPose(gesture, pressure, phase, stroke);
   const mesh=model.userData.mesh,targetPad=Math.max(0,Math.min(1,pressure));
   const padFollow=snap?1:1-Math.exp(-Math.min(dt,.05)/.085);
@@ -111,5 +139,6 @@ export function articulateHand(model, gesture, pressure, phase, stroke, dt, snap
     rotation.set(angles.x, angles.y, angles.z, 'XYZ');
     deltaRotation.setFromEuler(rotation);
     bone.quaternion.copy(bone.userData.rest).multiply(deltaRotation);
+    bone.userData.contactFlex=angles.x;
   }
 }

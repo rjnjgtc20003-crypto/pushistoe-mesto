@@ -16,8 +16,8 @@ export function sampleContactGesture(id,t,radii=[.88,.82,.76]){
   const opacity=gentleEase(t/.25)*(1-gentleEase((t-duration+.3)/.3));
   if(id==='head-pat'){
     // Three gentle contacts, without the tiny accidental bounces of the editor.
-    const clearance=beats([[0,.60],[.65,.048],[1,.20],[1.35,.045],[1.72,.20],[2.1,.043],[2.38,.043],[3.1,.60]],t);
-    const pressure=gentleEase((.24-clearance)/.195);
+    const clearance=beats([[0,.60],[.65,.021],[1,.20],[1.35,.021],[1.72,.20],[2.1,.021],[2.38,.021],[3.1,.60]],t);
+    const pressure=gentleEase((.24-clearance)/.219);
     const u=[.115,Math.sqrt(1-.115**2-.13**2),.13];
     const normal=u.map((v,i)=>v/radii[i]),len=Math.hypot(...normal);
     normal.forEach((v,i)=>normal[i]=v/len);
@@ -27,14 +27,16 @@ export function sampleContactGesture(id,t,radii=[.88,.82,.76]){
   }
   const approach=gentleEase(t/.95)*(1-gentleEase((t-3.25)/.85));
   const pressure=beats([[0,0],[.35,0],[1,.92],[1.6,.12],[2.15,.94],[2.7,.14],[3.15,1],[3.4,.9],[4.1,0]],t);
-  const clearance=.047+(1-approach)*.48+(1-pressure)*approach*.105;
+  // Release the cheeks without throwing the hands out to the sides. The
+  // short approach/release follows the viewer-facing wrists, not a wide arc.
+  const clearance=.025+(1-approach)*.20+(1-pressure)*approach*.045;
   // Do not squash the body during approach or after the palms leave its coat.
-  const contactPressure=pressure*gentleEase((.44-clearance)/.32);
+  const contactPressure=pressure*approach;
   const palms=[1,-1].map(side=>{
     const u=[side*.82,-.22,Math.sqrt(1-.82**2-.22**2)];
     const normal=u.map((v,i)=>v/radii[i]),len=Math.hypot(...normal);
     normal.forEach((v,i)=>normal[i]=v/len);
-    const approachOffset=[side*(1-approach)*.10,0,(1-approach)*.38];
+    const approachOffset=[0,0,(1-approach)*.12];
     const scale=cheekScale(...u,contactPressure);
     return {root:u.map((v,i)=>v*radii[i]*scale),normal,clearance,approachOffset,
       direction:[0,-1,0],fingerDirection:[-side*.3,.2,-1]};

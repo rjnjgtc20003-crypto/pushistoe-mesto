@@ -34,6 +34,8 @@ export function handPose(gesture, pressure, phase = 0, stroke = 0) {
       // A loose airborne hand opens onto the coat. Contact poses vary gently
       // per finger through the pass; distal joints are no longer frozen.
       const follow=Math.sin(Math.PI*clamp(progress-i*.045,0,1));
+      // This is the free pose. Surface contact adds bounded, per-finger
+      // conformity from measured skin/body distance in palm-contact.js.
       const contactMcp=1.1+i*.2+[2.8,2.2,.8,-.5][i]*follow;
       const contactPip=.7+[1.6,1.4,.6,.3][i]*follow;
       const contactDip=.4+[.9,.8,.4,.2][i]*follow;
@@ -52,11 +54,13 @@ export function handPose(gesture, pressure, phase = 0, stroke = 0) {
       pose[`${finger}_mcp`]=[2+i*.3+p*1.4,0,[1,0,-.5,-1][i]*p];
       pose[`${finger}_pip`]=[1.5+i*.2+p*.4,0,0];
       pose[`${finger}_dip`]=[.7+i*.1,0,0];
-      pose[`${finger}_palm`]=[0,[0,.4,1,1.5][i]*p,0];
+      // A transverse palmar arch: the ulnar rays cup more than the stable
+      // index/middle side. This bends the palm, not just the finger tips.
+      pose[`${finger}_palm`]=squeeze?[[0,.2,1,2][i]*p,[0,0,4,8][i]*p,[0,0,-1,-2][i]*p]:[0,[0,.4,1,1.5][i]*p,0];
     });
     pose.thumb_cmc=[3+p*(squeeze?3:2),-3*p,-p];
     pose.thumb_mcp=[2+p,0,0];pose.thumb_ip=[1,0,0];
-    pose.wrist=[squeeze?12+12*p:-7+4*p,0,0];
+    pose.wrist=[squeeze?12+18*p:-7+4*p,0,squeeze?5*p:0];
   }
   return pose;
 }

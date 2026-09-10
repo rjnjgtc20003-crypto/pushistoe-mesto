@@ -7,7 +7,7 @@ export const CONTACT_OUT=PASS_DURATION-.55;
 // Artist-calibrated for the VISIBLE fingertip/cuff extents, not a symmetric
 // palm-centre arc and not the user's illustrative degree numbers.
 export const START_ANGLE=-.05;
-export const END_ANGLE=.40;
+export const END_ANGLE=.405;
 const DEPTH=.12;
 const clamp=x=>Math.max(0,Math.min(1,x));
 export const easeStroke=x=>{const t=clamp(x);return t*t*t*(10+t*(-15+6*t));};
@@ -40,7 +40,8 @@ export function createStrokeSampler(rx,ry,rz){
     const root=point(angle),normal=root.map((v,k)=>v/([rx,ry,rz][k]**2));
     const length=Math.hypot(...normal);normal.forEach((v,k)=>normal[k]=v/length);
     const pressure=returning?0:easeStroke(local/CONTACT_IN)*(1-easeStroke((local-CONTACT_OUT)/(PASS_DURATION-CONTACT_OUT)));
-    const clearance=.045+.19*(1-pressure);
+    // The load-bearing surface is the body, not the tips of its long coat.
+    const clearance=.017+.218*(1-pressure);
     const liftPose=returning?64*u**3*(1-u)**3:0;
     const lift=.48*liftPose;
     const palm=root.map((v,k)=>v+normal[k]*clearance);palm[1]+=lift;

@@ -19,6 +19,53 @@ const resizeFacing = new THREE.Vector3();
 const desiredAlong = new THREE.Vector3();
 const twistCross = new THREE.Vector3();
 const rayPoint = new THREE.Vector3();
+const flexRotation = new THREE.Euler();
+const flexQuaternion = new THREE.Quaternion();
+
+function setFlex(bone,angle){
+  const a=bone.userData.angles;
+  flexRotation.set(angle,a.y,a.z,'XYZ');
+  bone.quaternion.copy(bone.userData.rest).multiply(flexQuaternion.setFromEuler(flexRotation));
+}
+
+function bodyGap(point,bodyCenter,radii,cheeks){
+  const x=(point.x-bodyCenter.x)/radii.x,y=(point.y-bodyCenter.y)/radii.y,z=(point.z-bodyCenter.z)/radii.z;
+  const l=Math.hypot(x,y,z);
+  return point.distanceTo(bodyCenter)*(1-(cheeks?cheekScale(x/l,y/l,z/l,cheeks):1)/l);
+}
+
+// Fit each finger to the body AFTER establishing broad palm support. A finger
+// must not act as a prop that lifts the entire palm back into the outer coat.
+// One bounded synergy per digit bends mainly at MCP, gently at PIP/DIP: this
+// follows a convex surface without solving a hooked fingertip grasp.
+function conformDigits(hand,bodyCenter,radii,cheeks){
+  const model=hand.userData.model,p=model.userData.contactPressure??0;
+  if(p<1e-5)return;
+  for(const {indices,bones:chain,maximum} of model.userData.contactChains){
+    const poseAt=u=>{for(let j=0;j<chain.length;j++)setFlex(chain[j],maximum[j]*u);};
+    const gap=()=>{
+      const mesh=updateSkinFrame(hand);let min=Infinity;
+      for(const index of indices){
+        readSkinPoint(mesh,index,supportPoint);
+        min=Math.min(min,bodyGap(supportPoint,bodyCenter,radii,cheeks));
+      }
+      return min;
+    };
+    let lo=0,hi=1;
+    poseAt(hi);
+    if(gap()<.014){
+      for(let i=0;i<12;i++){
+        const mid=(lo+hi)/2;poseAt(mid);
+        if(gap()<.014)hi=mid;else lo=mid;
+      }
+    }else lo=1;
+    for(let j=0;j<chain.length;j++){
+      const angle=chain[j].userData.angles.x*(1-p)+maximum[j]*lo*p;
+      setFlex(chain[j],angle);chain[j].userData.contactFlex=angle;
+    }
+  }
+  updateSkinFrame(hand);
+}
 
 function updateSkinFrame(hand) {
   hand.parent.updateWorldMatrix(true,false);
@@ -115,24 +162,27 @@ export function placePalm(hand, target, outward, center, facing, fingerDirection
 // Keep ALL sampled palmar skin outside the soft body's support ellipsoid.
 // The exact ray/ellipsoid exit distance accounts for hand width and finger pose.
 // A small smooth maximum avoids a jerk when the supporting skin sample changes.
-export function supportPalm(hand,bodyCenter,radii,outward,center,facing,dt,cheeks=0) {
+function requiredSupport(hand,bodyCenter,radii,outward,cheeks,samples,margin,activation){
   const mesh=updateSkinFrame(hand);
-  supportRadii.copy(radii).addScalar(0.035);
+  supportRadii.copy(radii).addScalar(margin);
   supportDirection.copy(outward).divide(supportRadii);
   const a=supportDirection.lengthSq();
-  let lift=0;
+  let lift=-1;
   hand.userData.supportVertex=null;
-  for(const index of hand.userData.model.userData.contactSamples) {
+  for(const index of samples) {
     readSkinPoint(mesh,index,supportPoint).sub(bodyCenter).divide(supportRadii);
     const b=supportPoint.dot(supportDirection),c=supportPoint.lengthSq()-1;
     const discriminant=b*b-a*c;
     if(discriminant<=0||b<=0)continue;
     let exit=(-b+Math.sqrt(discriminant))/a;
-    if(cheeks>0&&exit>0){
-      const length=supportPoint.length();
-      if(length>=cheekScale(supportPoint.x/length,supportPoint.y/length,supportPoint.z/length,cheeks))continue;
-      let lo=0,hi=exit;
-      for(let step=0;step<12;step++){
+    if(cheeks>0){
+      // Keep the SIGNED exit for skin just outside a deformed cheek, too.
+      // Dropping these samples made the soft contact activate discontinuously.
+      let lo=-b/a,hi=exit;
+      rayPoint.copy(supportPoint).addScaledVector(supportDirection,lo);
+      const closest=rayPoint.length();
+      if(closest>=cheekScale(rayPoint.x/closest,rayPoint.y/closest,rayPoint.z/closest,cheeks))continue;
+      for(let step=0;step<18;step++){
         const mid=(lo+hi)/2;
         rayPoint.copy(supportPoint).addScaledVector(supportDirection,mid);
         const l=rayPoint.length();
@@ -147,14 +197,30 @@ export function supportPalm(hand,bodyCenter,radii,outward,center,facing,dt,cheek
     const blend=Math.max(0,softness-Math.abs(lift-exit))/softness;
     lift=Math.max(lift,exit)+blend*blend*softness*.25;
   }
+  // Ease into support BEFORE the constraint becomes active. A hard max(0,x)
+  // starts with an abrupt stop even when the incoming path is C2 continuous.
+  const blend=Math.max(0,activation-Math.abs(lift))/activation;
+  return Math.max(0,lift)+blend*blend*activation*.25;
+}
+
+export function supportPalm(hand,bodyCenter,radii,outward,center,facing,dt,cheeks=0) {
+  const model=hand.userData.model,contact=model.userData.contactPressure>0;
+  const squeeze=model.userData.contactGesture==='squeeze';
+  let lift=requiredSupport(hand,bodyCenter,radii,outward,cheeks,contact?model.userData.palmSupport:model.userData.contactSamples,.012,squeeze?.04:.025);
+  hand.userData.palmSupportVertex=hand.userData.supportVertex;
+  hand.position.addScaledVector(outward,lift);
+  if(contact){
+    conformDigits(hand,bodyCenter,radii,cheeks);
+    const guard=requiredSupport(hand,bodyCenter,radii,outward,cheeks,model.userData.contactSamples,.006,squeeze?.018:.012);
+    hand.userData.guardSupportVertex=hand.userData.supportVertex;
+    hand.position.addScaledVector(outward,guard);lift+=guard;
+  }
   if(dt!==undefined){
-    // Spend part of the 0.035 soft-coat margin on temporal continuity when a
-    // fingertip becomes the supporting sample. Never spend the whole margin.
     const previous=hand.userData.supportOffset??0;
     const relaxed=previous+(lift-previous)*(1-Math.exp(-Math.min(dt,.05)/.07));
-    lift=Math.max(0,lift-.02,relaxed);
+    const filtered=Math.max(0,lift-.004,relaxed);
+    hand.position.addScaledVector(outward,filtered-lift);lift=filtered;
   }
-  hand.position.addScaledVector(outward,lift);
   hand.userData.supportOffset=lift;
   readPalmFrame(hand,center,facing);
   return lift;
