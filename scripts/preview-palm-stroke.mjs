@@ -4,7 +4,7 @@ import path from 'node:path';
 import http from 'node:http';
 import {pathToFileURL} from 'node:url';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE?pathToFileURL(process.env.PLAYWRIGHT_MODULE).href:'playwright');
-const root=path.resolve('public/github-site'),out=path.resolve(process.env.CONTACT_PREVIEW??'outputs/palm-support/preview');
+const root=path.resolve(process.env.CONTACT_PREVIEW_SCENE_ROOT??'public/github-site'),out=path.resolve(process.env.CONTACT_PREVIEW??'outputs/palm-support/preview');
 await fs.mkdir(out,{recursive:true});
 const code=await fs.readFile(path.join(root,'scene.js'),'utf8');
 const instrumented=code+`
@@ -12,12 +12,12 @@ const diagnosticNaturalTime=clock.getElapsedTime.bind(clock);
 clock.getElapsedTime=()=>window.__testTime??diagnosticNaturalTime();
 window.__contactPreview={
  ready:()=>!actionButtons[0].disabled,
- at:(seconds,rotation=[0,0],fur=true)=>{
+ at:(seconds,rotation=[0,0],fur=true,action='pet')=>{
   window.__testTime=0;previousHandTime=0;actionState=null;blinkStarted=-1;nextBlink=999;
   if(typeof furResponse!=='undefined')furResponse.reset();
   targetRigRotationX=rotation[0];targetRigRotationY=rotation[1];
   interactionRig.rotation.set(rotation[0],rotation[1],0);rigVelocityX=rigVelocityY=0;
-  furCloud.visible=fur;playAction('pet');
+  furCloud.visible=fur;playAction(action);
   for(let t=0;t<seconds;t+=1/120)updateAction(t);
   window.__testTime=seconds;
  },
@@ -52,6 +52,19 @@ try{
  for(const t of [.7,1.15,1.7,2.3,2.9,3.45,3.9,4.6,5.1]){
   await page.evaluate(t=>window.__contactPreview.at(t),t);await page.waitForTimeout(50);
   await page.screenshot({path:path.join(out,`pet-${t}.png`)});
+ }
+ for(const action of ['head-pat','squeeze']){
+  const t=action==='squeeze'?1:.65;
+  for(const fur of [false,true])for(const [label,angle] of [['front',[0,0]],['side',[.2,1]],['back',[.2,2.8]],['top',[.72,0]]]){
+   await page.evaluate(({t,angle,fur,action})=>window.__contactPreview.at(t,angle,fur,action),{t,angle,fur,action});
+   await page.waitForTimeout(60);
+   await page.screenshot({path:path.join(out,`${action}-${fur?'fur':'bare'}-${label}.png`)});
+  }
+  for(const t of action==='squeeze'?[0,.4,1,1.6,2.15,2.7,3.15,3.7,4.1]:[0,.4,.65,1,1.35,1.72,2.1,2.7,3.1]){
+   await page.evaluate(({t,action})=>window.__contactPreview.at(t,[0,0],true,action),{t,action});
+   await page.waitForTimeout(40);
+   await page.screenshot({path:path.join(out,`${action}-${t}.png`)});
+  }
  }
  console.log(JSON.stringify({out,errors}));
  if(errors.length)process.exitCode=1;

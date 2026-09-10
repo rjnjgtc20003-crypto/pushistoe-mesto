@@ -32,7 +32,7 @@ for(let frame=0;frame<=Math.round(STROKE_DURATION/dt);frame++) {
   placePalm(hand,target,outward,center,facing);
   assert.ok(center.distanceTo(target)<1e-5);
   assert.ok(facing.dot(outward)<-.999);
-  maxSupport=Math.max(maxSupport,supportPalm(hand,bodyCenter,radii,supportNormal,center,facing));
+  maxSupport=Math.max(maxSupport,supportPalm(hand,bodyCenter,radii,supportNormal,center,facing,dt));
   if(previous) {
     assert.ok(s.root[0]>=previous.rootX-1e-10,'Stroke reversed direction');
     const speed=hand.position.distanceTo(previous.position)/dt;
@@ -59,8 +59,8 @@ for(let frame=0;frame<=Math.round(STROKE_DURATION/dt);frame++) {
   if(frame%6===0) {
     const mesh=model.userData.mesh,vertices=[];
     for(let i=0;i<mesh.geometry.attributes.position.count;i++) {
-      const p=new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.position,i);
-      mesh.applyBoneTransform(i,p);mesh.localToWorld(p);vertices.push(p.toArray());
+      const p=mesh.getVertexPosition(i,new THREE.Vector3());
+      mesh.localToWorld(p);vertices.push(p.toArray());
       minBodyDistance=Math.min(minBodyDistance,p.clone().sub(bodyCenter).divide(radii).length());
     }
     samples.push({time:t,vertices,opacity:s.opacity});

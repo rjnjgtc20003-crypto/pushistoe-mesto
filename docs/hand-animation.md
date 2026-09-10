@@ -183,3 +183,58 @@ On the Intel UHD desktop headless check, the new petting callback cost had a
 1.9 ms p95 and the run maintained about 144 fps. The 390 x 844 / DPR 3 viewport
 averaged about 106 fps, with one 36 ms first-run interval and an 11.7 ms warm
 maximum. These are desktop measurements, not actual iPhone/Android benchmarks.
+
+## Shared palm contact for all three gestures, revision 5
+
+This revision extends skin-driven contact to **head-pat and squeeze**. The editor
+JSON files are preserved unchanged as archives. `contact-gestures.js` retargets
+their three-contact pattern to actual palm centres, with new quintic approach,
+press and release beats (3.1 s for pats, 4.1 s for squeezing). These are artist-tuned
+paths, not captured human motion or a literal playback of every editor key.
+Hand scale stays 1.55; the face assets, colour modes and six-button UI are unchanged.
+
+Both hands now use the same support ellipsoid as the rendered body. Opposing
+palms have mirrored contact targets; pressure starts after entering the long
+coat, and the body and hair roots share the same squash transform. The old
+shader-only cheek dent and timeline-triggered hair shortening are removed: they
+could move hair independently of the body and the contacting skin. The existing
+small facial squeeze response remains.
+
+The fur field accepts separate skin samples, normals and spreading directions
+for each palm. A pat/squeeze lays the coat away from the pad centre; stroking
+combs along the stroke. Switching gestures no longer erases the released bend.
+The contact-plane approximation still is not exact per-strand collision or a
+friction solver, and can leave local silhouette/occlusion imperfections.
+
+A small precomputed morph compresses the fleshy palm pads and subtly widens
+them under pressure. Its influence responds over time. CPU contact uses
+`SkinnedMesh.getVertexPosition`, including both this corrective and bone skinning,
+so it measures the same surface as the renderer. This is a bounded corrective,
+not a soft-tissue simulation, and introduces no per-frame mesh reconstruction.
+Finger flexion stays mild instead of curling into a grasp.
+
+The support offset now relaxes over 70 ms, using at most 0.020 of its 0.035-unit
+coat margin. This removes the acceleration spike when the supporting skin sample
+changes, without letting the full checked mesh enter the body. The archived
+static helper remains available without temporal smoothing for old diagnostics.
+
+Verification (scene-unit tolerances, not anatomical claims):
+
+- `check-contact-gestures.mjs`: 120 Hz poses, full-mesh body clearance sampled at
+  10 Hz, broad palmar proximity at peak pressure, mirrored squeeze targets and
+  invariance under scene rotation. Minimum normalized body distance: 1.037 for
+  patting and 1.031 for squeezing; peak-pressure central-palm median gap stays
+  below 0.078 units. Maximum angular speed is below 0.59 rad/s for both gestures.
+- The same test caught a support-switch acceleration spike in squeezing;
+  temporal contact support reduced it from 27.8 to 7.44 units/s².
+- `check-fur-response.mjs`: separate two-palm response, symmetry, contact-order
+  independence and retained recovery when one hand leaves, in addition to the
+  earlier single-palm and frame-rate tests.
+- Rig and stroke regressions include the pad morph in CPU vertex measurements.
+  Petting still passes the 553-pose trajectory and whole-mesh clearance checks.
+- `preview-palm-stroke.mjs` now captures all gestures from front/side/back/top,
+  bare-body contact views and chronological samples. `CONTACT_PREVIEW_SCENE_ROOT`
+  can select the built, cache-versioned output for verification before publishing.
+
+Headless Chrome is used without Computer Use. Phone-sized viewport checks still
+run on a desktop GPU; real iPhone/Safari and Android device testing remains open.

@@ -1,8 +1,9 @@
 import * as THREE from 'https://esm.sh/three@0.180.0';
-import { createHandMesh, articulateHand, HAND_SCALE, AUTHORED_HAND_SCALE } from './hand-rig.js';
-import { placePalm, supportPalm, resizeAtPalm, readContactSurface } from './palm-contact.js';
+import { createHandMesh, articulateHand, HAND_SCALE } from './hand-rig.js';
+import { placePalm, supportPalm, readContactSurface } from './palm-contact.js';
 import { createStrokeSampler, STROKE_DURATION } from './stroke-motion.js';
 import { FurResponseField } from './fur-response.js';
+import { sampleContactGesture } from './contact-gestures.js';
 
 const canvas = document.querySelector('canvas');
 const colorButtons = [...document.querySelectorAll('[data-color]')];
@@ -163,16 +164,6 @@ const furMaterial = new THREE.ShaderMaterial({
   uniforms: {
     uTime: { value: 0 },
     uReducedMotion: { value: prefersReducedMotion ? 1 : 0 },
-    uTouch0: { value: new THREE.Vector3(4, 4, 4) },
-    uTouch1: { value: new THREE.Vector3(4, 4, 4) },
-    uStrokeDir: { value: new THREE.Vector3(1, -0.08, 0).normalize() },
-    uPressure: { value: 0 },
-    uPalmStrength: { value: 0 },
-    uPalmPosition: { value: new THREE.Vector3() },
-    uPalmNormal: { value: new THREE.Vector3(0,1,0) },
-    uPalmAlong: { value: new THREE.Vector3(-1,0,0) },
-    uInteractionMode: { value: 0 },
-    uCheekSqueeze: { value: 0 },
     uBodyRadii: { value: radii.clone() },
     uGradientMode: { value: 0 },
     uComb: { value: combTexture },
@@ -181,16 +172,6 @@ const furMaterial = new THREE.ShaderMaterial({
   vertexShader: `
     uniform float uTime;
     uniform float uReducedMotion;
-    uniform vec3 uTouch0;
-    uniform vec3 uTouch1;
-    uniform vec3 uStrokeDir;
-    uniform float uPressure;
-    uniform float uPalmStrength;
-    uniform vec3 uPalmPosition;
-    uniform vec3 uPalmNormal;
-    uniform vec3 uPalmAlong;
-    uniform float uInteractionMode;
-    uniform float uCheekSqueeze;
     uniform vec3 uBodyRadii;
     uniform float uGradientMode;
     uniform sampler2D uComb;
@@ -219,35 +200,11 @@ const furMaterial = new THREE.ShaderMaterial({
       float motion = 1.0 - uReducedMotion;
       float sway = sin(uTime * 1.18 + aPhase) * 0.021 * tip * motion;
       float crossSway = cos(uTime * 0.91 + aPhase * 0.67) * 0.013 * tip * motion;
-      float squeezeMode = step(1.5, uInteractionMode);
-      float spreadMode = step(0.5, uInteractionMode);
-      float contactEdge = mix(0.41, 0.42, squeezeMode);
-      float touch0 = 1.0 - smoothstep(0.12, contactEdge, distance(aOffset, uTouch0));
-      float touch1 = 1.0 - smoothstep(0.12, contactEdge, distance(aOffset, uTouch1));
-      // Archived pat/squeeze keep their separate look. Petting uses actual skin
-      // contact and a persistent comb field instead of a timer-driven dent.
-      float contact = pow(max(touch0, touch1), mix(1.0, 1.45, squeezeMode)) * uPressure * spreadMode;
       float longHair = smoothstep(0.72, 1.04, aLength);
-      float compression = mix(
-        mix(0.3, 0.44, longHair) + spreadMode * 0.04,
-        mix(0.18, 0.28, longHair),
-        squeezeMode
-      );
-      float compressedLength = aLength * (1.0 - contact * compression);
-      vec3 brush = normalize(uStrokeDir + vec3(0.0001));
-      vec3 strokeTangent = normalize(brush - n * dot(brush, n) + vec3(0.0001));
-      vec3 nearestTouch = touch0 >= touch1 ? uTouch0 : uTouch1;
-      vec3 fromTouch = aOffset - nearestTouch;
-      vec3 spreadTangent = normalize(fromTouch - n * dot(fromTouch, n) + tangent * 0.001);
-      vec3 bendDirection = normalize(mix(strokeTangent, spreadTangent, spreadMode) + vec3(0.0001));
-      vec3 p = aOffset;
-      p += n * (position.y * compressedLength);
-      p += tangent * (position.x * aWidth + sway * (1.0 - contact));
-      p += bitangent * (position.z * aWidth + crossSway * (1.0 - contact));
+      vec3 p = aOffset + n * position.y * aLength;
+      p += tangent * (position.x * aWidth + sway);
+      p += bitangent * (position.z * aWidth + crossSway);
       p += (tangent * sin(aPhase) + bitangent * cos(aPhase)) * aLean * tip * aLength * 0.035;
-      float bendDistance = mix(mix(0.075, 0.17, longHair), mix(0.07, 0.13, longHair), squeezeMode);
-      p += bendDirection * contact * tip * bendDistance;
-      p -= n * contact * tip * mix(0.028, 0.025, squeezeMode);
       vec3 unitRoot=normalize(aOffset/uBodyRadii);
       vec2 combUv=vec2(atan(unitRoot.z,unitRoot.x)/6.28318530718+0.5,acos(clamp(unitRoot.y,-1.0,1.0))/3.14159265359);
       vec4 comb=texture2D(uComb,combUv);
@@ -267,27 +224,8 @@ const furMaterial = new THREE.ShaderMaterial({
       vec4 coatSupport=texture2D(uCombContact,combUv);
       vec3 coatNormal=normalize(coatSupport.xyz);
       p-=coatNormal*max(0.0,dot(p,coatNormal)-coatSupport.w);
-      // Lay the coat beneath the contacting palm plane, rather than allowing
-      // long strands to pass through the middle of the hand.
-      // An oriented footprint spans the heel, palm and relaxed finger pads of
-      // the larger hand. Test the strand, not only its distant root on the body.
-      vec3 palmDelta = p - uPalmPosition;
-      vec3 palmAcross = normalize(cross(uPalmNormal, uPalmAlong));
-      float palmU = (dot(palmDelta, uPalmAlong) - 0.12) / 0.70;
-      float palmV = (dot(palmDelta, palmAcross) - 0.08) / 0.44;
-      float palmFootprint = 1.0 - smoothstep(0.76, 1.08, length(vec2(palmU, palmV)));
-      float throughPalm = max(0.0, dot(p - uPalmPosition, uPalmNormal) + 0.008);
-      p -= uPalmNormal * throughPalm * palmFootprint * uPalmStrength;
-
-      vec3 normalizedRoot = aOffset / uBodyRadii;
-      float cheekFront = smoothstep(0.25, 0.86, normalizedRoot.z);
-      float cheekHeight = 1.0 - smoothstep(0.36, 0.82, abs(normalizedRoot.y + 0.08));
-      float cheekSide = smoothstep(0.25, 0.72, abs(normalizedRoot.x));
-      float cheekMask = cheekFront * cheekHeight * cheekSide;
-      p.x *= 1.0 - uCheekSqueeze * 0.11 * cheekMask;
-      p.z += uCheekSqueeze * 0.028 * cheekMask;
-      p.y += uCheekSqueeze * 0.012 * cheekMask;
-
+      // Body and roots use the same soft ellipsoid transform. A second,
+      // shader-only cheek dent would detach the coat from its support surface.
       gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
       vRed = aRed;
       vAlong = along;
@@ -525,50 +463,6 @@ function poseHand(hand, pressure, phase = 0, stroke = 0, snap = false) {
     phase, stroke, handFrameDelta, snap);
 }
 
-function sampleTrack(keyframes, frame, hand, side = null, smooth = false) {
-  let afterIndex = keyframes.findIndex((keyframe) => keyframe.frame >= frame);
-  if (afterIndex < 0) afterIndex = keyframes.length - 1;
-  if (afterIndex === 0) {
-    const first = side ? keyframes[0][side] : keyframes[0];
-    hand.position.fromArray(first.position);
-    hand.quaternion.fromArray(first.quaternion).normalize();
-    return;
-  }
-
-  const beforeIndex = afterIndex - 1;
-  const previousIndex = Math.max(0, beforeIndex - 1);
-  const nextIndex = Math.min(keyframes.length - 1, afterIndex + 1);
-  const before = keyframes[beforeIndex];
-  const after = keyframes[afterIndex];
-  const previous = keyframes[previousIndex];
-  const next = keyframes[nextIndex];
-  const first = side ? before[side] : before;
-  const second = side ? after[side] : after;
-  const previousValue = side ? previous[side] : previous;
-  const nextValue = side ? next[side] : next;
-  const segmentFrames = Math.max(after.frame - before.frame, 0.0001);
-  const amount = THREE.MathUtils.clamp((frame - before.frame) / segmentFrames, 0, 1);
-  const firstPosition = new THREE.Vector3().fromArray(first.position);
-  const secondPosition = new THREE.Vector3().fromArray(second.position);
-  const previousPosition = new THREE.Vector3().fromArray(previousValue.position);
-  const nextPosition = new THREE.Vector3().fromArray(nextValue.position);
-  const firstVelocity = secondPosition.clone().sub(previousPosition)
-    .multiplyScalar(segmentFrames / Math.max(after.frame - previous.frame, 0.0001));
-  const secondVelocity = nextPosition.clone().sub(firstPosition)
-    .multiplyScalar(segmentFrames / Math.max(next.frame - before.frame, 0.0001));
-  const amount2 = amount * amount;
-  const amount3 = amount2 * amount;
-  hand.position.copy(firstPosition).multiplyScalar(2 * amount3 - 3 * amount2 + 1)
-    .addScaledVector(firstVelocity, amount3 - 2 * amount2 + amount)
-    .addScaledVector(secondPosition, -2 * amount3 + 3 * amount2)
-    .addScaledVector(secondVelocity, amount3 - amount2);
-
-  const rotationAmount = smooth ? amount2 * (3 - 2 * amount) : amount;
-  const firstQuaternion = new THREE.Quaternion().fromArray(first.quaternion).normalize();
-  const secondQuaternion = new THREE.Quaternion().fromArray(second.quaternion).normalize();
-  hand.quaternion.copy(firstQuaternion).slerp(secondQuaternion, rotationAmount);
-}
-
 function setActionButton(id) {
   actionButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.action === id)));
 }
@@ -576,14 +470,11 @@ function setActionButton(id) {
 function playAction(id) {
   const animation = animations.get(id);
   if (!animation || !leftHand || !rightHand || actionState?.id === id) return;
-  // Legacy gestures own their deformation; do not double-compress a retained
-  // petting bend when the user switches directly into patting or squeezing.
-  if(id!=='pet'){furResponse.reset();uploadCombField();}
+  // Keep released fur memory when changing gestures; each palm owns its contact.
   actionState = { id, animation, startedAt: clock.getElapsedTime() };
-  hasPreviousContact = false;
-  movement.set(1, -0.08, 0);
   poseHand(leftHand, 0, 0, 0, true);
   poseHand(rightHand, 0, 0, 0, true);
+  leftHand.userData.supportOffset=rightHand.userData.supportOffset=0;
   leftHand.userData.model.userData.mesh.material.opacity = id === 'pet' ? 0 : 1;
   rightHand.userData.model.userData.mesh.material.opacity = 1;
   leftHand.visible = true;
@@ -641,174 +532,85 @@ async function loadHandsAndAnimations() {
 
 loadHandsAndAnimations().catch((error) => console.error('Не удалось загрузить анимации', error));
 
-const localHandPosition = new THREE.Vector3();
-const contactCenter = new THREE.Vector3();
-const secondContact = new THREE.Vector3();
-const previousContact = new THREE.Vector3();
-const leftContact = new THREE.Vector3();
-const rightContact = new THREE.Vector3();
-const movement = new THREE.Vector3(1, -0.08, 0);
-const settleDirection = new THREE.Vector3();
 const palmFacing = new THREE.Vector3();
 const strokePalmTarget = new THREE.Vector3();
 const strokeNormal = new THREE.Vector3();
 const strokePalmCenter = new THREE.Vector3();
-const strokeSupportNormal = new THREE.Vector3();
 const scaledBodyRadii = new THREE.Vector3();
 const samplePalmStroke = createStrokeSampler(radii.x,radii.y,radii.z);
-let palmarSkin=null;
-const combMovement=[1,0,0];
-const combNormal=[0,1,0];
-let hasPreviousContact = false;
+const contactPalms=[];
+const contactNormal=new THREE.Vector3();
 
-function projectHandToFur(hand, target) {
-  localHandPosition.copy(hand.position).sub(creature.position);
-  const denominator = Math.sqrt(
-    (localHandPosition.x * localHandPosition.x) / (radii.x * radii.x)
-      + (localHandPosition.y * localHandPosition.y) / (radii.y * radii.y)
-      + (localHandPosition.z * localHandPosition.z) / (radii.z * radii.z),
-  );
-  target.copy(localHandPosition).multiplyScalar(1 / Math.max(denominator, 0.0001));
-  return localHandPosition.distanceTo(target);
+// Sample the same morph + skinned surface the renderer draws. Keep each hand's
+// normal, footprint and spread direction separate; do not merge opposing palms.
+function collectPalmContact(hand,direction,spread=false) {
+  const count=hand.userData.model.userData.furSamples.length;
+  const contact=hand.userData.coatContact??={
+    points:new Float32Array(count*3),normal:[0,1,0],direction:[1,0,0],center:[0,0,0],
+  };
+  readContactSurface(hand,contact.points);
+  for(let i=0;i<contact.points.length;i+=3){
+    contact.points[i]=(contact.points[i]-creature.position.x)/creature.scale.x;
+    contact.points[i+1]=(contact.points[i+1]-creature.position.y)/creature.scale.y;
+    contact.points[i+2]=(contact.points[i+2]-creature.position.z)/creature.scale.z;
+  }
+  contactNormal.copy(palmFacing).negate().multiply(creature.scale).normalize().toArray(contact.normal);
+  contactNormal.copy(strokePalmCenter).sub(creature.position).divide(creature.scale).toArray(contact.center);
+  for(let i=0;i<3;i++)contact.direction[i]=direction[i];
+  contact.spread=spread;
+  contactPalms.push(contact);
 }
 
-function smoothStep(edge0, edge1, value) {
-  const amount = THREE.MathUtils.clamp((value - edge0) / (edge1 - edge0), 0, 1);
-  return amount * amount * (3 - 2 * amount);
-}
-
-function settleHandIntoFur(hand, pressure, depth) {
-  settleDirection.copy(hand.position).sub(creature.position).normalize();
-  hand.position.addScaledVector(settleDirection, -pressure * depth);
+function positionContactPalm(hand,target,normal,pressure,phase,direction,spread) {
+  hand.scale.set(hand.userData.mirrored?-HAND_SCALE:HAND_SCALE,HAND_SCALE,HAND_SCALE);
+  poseHand(hand,pressure,phase);
+  strokePalmTarget.fromArray(target).multiply(creature.scale).add(creature.position);
+  strokeNormal.fromArray(normal).divide(creature.scale).normalize();
+  placePalm(hand,strokePalmTarget,strokeNormal,strokePalmCenter,palmFacing);
+  scaledBodyRadii.copy(radii).multiply(creature.scale);
+  supportPalm(hand,creature.position,scaledBodyRadii,strokeNormal,strokePalmCenter,palmFacing,handFrameDelta);
+  collectPalmContact(hand,direction,spread);
 }
 
 let handFrameDelta = 1 / 60;
 let previousHandTime = 0;
 function updateAction(time) {
-  furMaterial.uniforms.uPalmStrength.value = 0;
-  handFrameDelta = Math.min(0.05, Math.max(0, time - previousHandTime));
-  previousHandTime = time;
-  let squeezeAmount = 0;
-  let cheekSqueeze = 0;
-  let headPatAmount = 0;
-  let combContact=null;
-
-  if (actionState) {
-    const { id, animation, startedAt } = actionState;
-    const elapsed = time - startedAt;
-    const gestureDuration = animation.durationSeconds * 1.3;
-    const frame = Math.min(elapsed * animation.fps / 1.3, animation.durationFrames - 1);
-    const phase = elapsed / gestureDuration;
-    const release = smoothStep(gestureDuration - 0.12, gestureDuration + 0.38, elapsed);
-    const smooth = animation.interpolation?.position === 'smoothstep';
-
-    if (id === 'pet') {
-      const stroke = samplePalmStroke(elapsed);
-      // The palm uses this frame's breathing transform, not the previous frame's.
+  handFrameDelta=Math.min(.05,Math.max(0,time-previousHandTime));
+  previousHandTime=time;
+  let squeezeAmount=0,cheekSqueeze=0,headPatAmount=0;
+  contactPalms.length=0;
+  if(actionState){
+    const {id,startedAt}=actionState,elapsed=Math.max(0,time-startedAt);
+    let duration;
+    if(id==='pet'){
+      const stroke=samplePalmStroke(elapsed);
+      duration=STROKE_DURATION;
       updateCreatureForm(time,{squeezeAmount:0,headPatAmount:0});
-      leftHand.scale.setScalar(HAND_SCALE);
-      poseHand(leftHand,stroke.pressure,stroke.progress);
-      strokePalmTarget.fromArray(stroke.palm).multiply(creature.scale).add(creature.position);
-      strokeNormal.fromArray(stroke.orientation).divide(creature.scale).normalize();
-      strokeSupportNormal.fromArray(stroke.normal).divide(creature.scale).normalize();
-      placePalm(leftHand,strokePalmTarget,strokeNormal,strokePalmCenter,palmFacing);
-      scaledBodyRadii.copy(radii).multiply(creature.scale);
-      supportPalm(leftHand,creature.position,scaledBodyRadii,strokeSupportNormal,strokePalmCenter,palmFacing);
-      const sampleCount=leftHand.userData.model.userData.furSamples.length;
-      if(!palmarSkin||palmarSkin.length!==sampleCount*3)palmarSkin=new Float32Array(sampleCount*3);
-      readContactSurface(leftHand,palmarSkin);
-      for(let i=0;i<palmarSkin.length;i+=3){
-        palmarSkin[i]=(palmarSkin[i]-creature.position.x)/creature.scale.x;
-        palmarSkin[i+1]=(palmarSkin[i+1]-creature.position.y)/creature.scale.y;
-        palmarSkin[i+2]=(palmarSkin[i+2]-creature.position.z)/creature.scale.z;
-      }
-      combContact=palmarSkin;
-      for(let i=0;i<3;i++)combMovement[i]=stroke.tangent[i];
+      positionContactPalm(leftHand,stroke.palm,stroke.orientation,stroke.pressure,stroke.progress,stroke.tangent,false);
       leftHand.userData.model.userData.mesh.material.opacity=stroke.opacity;
-      contactCenter.fromArray(stroke.root);
-      movement.fromArray(stroke.tangent).normalize();
-      secondContact.copy(contactCenter).addScaledVector(movement,-0.16);
-      furMaterial.uniforms.uTouch0.value.copy(contactCenter);
-      furMaterial.uniforms.uTouch1.value.copy(secondContact);
-      furMaterial.uniforms.uStrokeDir.value.copy(movement);
-      furMaterial.uniforms.uPressure.value=stroke.pressure;
-      furMaterial.uniforms.uInteractionMode.value=0;
-      furMaterial.uniforms.uPalmPosition.value.copy(strokePalmCenter).sub(creature.position).divide(creature.scale);
-      furMaterial.uniforms.uPalmNormal.value.copy(palmFacing).negate().multiply(creature.scale).normalize();
-      furMaterial.uniforms.uPalmNormal.value.toArray(combNormal);
-      furMaterial.uniforms.uPalmAlong.value.copy(leftHand.userData.palmAlong).divide(creature.scale).normalize();
-      furMaterial.uniforms.uPalmStrength.value=0;
-      hasPreviousContact=false;
-    } else if (id === 'squeeze') {
-      leftHand.scale.setScalar(AUTHORED_HAND_SCALE);
-      rightHand.scale.set(-AUTHORED_HAND_SCALE,AUTHORED_HAND_SCALE,AUTHORED_HAND_SCALE);
-      sampleTrack(animation.keyframes, frame, leftHand, 'left', smooth);
-      sampleTrack(animation.keyframes, frame, rightHand, 'right', smooth);
-      const palmGap = Math.abs(leftHand.position.x - rightHand.position.x);
-      cheekSqueeze = (1 - smoothStep(1.86, 2.32, palmGap)) * (1 - release);
-      const palmConvergence = cheekSqueeze * 0.19;
-      leftHand.position.x -= palmConvergence;
-      rightHand.position.x += palmConvergence;
-      projectHandToFur(leftHand, leftContact);
-      projectHandToFur(rightHand, rightContact);
-      squeezeAmount = cheekSqueeze * 0.08;
-      furMaterial.uniforms.uTouch0.value.copy(leftContact);
-      furMaterial.uniforms.uTouch1.value.copy(rightContact);
-      furMaterial.uniforms.uPressure.value = cheekSqueeze * 0.68;
-      furMaterial.uniforms.uInteractionMode.value = 2;
-      leftHand.position.x += release * 0.5;
-      rightHand.position.x -= release * 0.5;
-      poseHand(leftHand, cheekSqueeze, phase);
-      poseHand(rightHand, cheekSqueeze, phase);
-      resizeAtPalm(leftHand,HAND_SCALE);
-      resizeAtPalm(rightHand,HAND_SCALE);
-      hasPreviousContact = false;
-    } else {
-      leftHand.scale.setScalar(AUTHORED_HAND_SCALE);
-      sampleTrack(animation.keyframes, frame, leftHand, null, smooth);
-      const distance = projectHandToFur(leftHand, contactCenter);
-      const contactPressure = (1 - smoothStep(0.18, 0.58, distance)) * (1 - release);
-      poseHand(leftHand, contactPressure, prefersReducedMotion ? 0 : phase);
-      settleHandIntoFur(leftHand, contactPressure, 0.065);
-      projectHandToFur(leftHand, contactCenter);
-      headPatAmount = id === 'head-pat' ? contactPressure * 0.03 : 0;
-      if (hasPreviousContact) {
-        movement.copy(contactCenter).sub(previousContact);
-        if (movement.lengthSq() > 0.00001) movement.normalize();
-      }
-      secondContact.copy(contactCenter);
-      previousContact.copy(contactCenter);
-      hasPreviousContact = true;
-      furMaterial.uniforms.uTouch0.value.copy(contactCenter);
-      furMaterial.uniforms.uTouch1.value.copy(secondContact);
-      furMaterial.uniforms.uStrokeDir.value.copy(movement);
-      furMaterial.uniforms.uPressure.value = contactPressure;
-      furMaterial.uniforms.uInteractionMode.value = id === 'head-pat' ? 1 : 0;
-      leftHand.position.y += release * 0.6;
-      resizeAtPalm(leftHand,HAND_SCALE);
+    }else{
+      const gesture=sampleContactGesture(id,elapsed,radii.toArray());
+      duration=gesture.duration;
+      squeezeAmount=gesture.squeeze;
+      cheekSqueeze=id==='squeeze'?gesture.pressure:0;
+      headPatAmount=gesture.pat;
+      updateCreatureForm(time,{squeezeAmount,headPatAmount});
+      gesture.palms.forEach((p,i)=>{
+        const hand=i===0?leftHand:rightHand;
+        const target=p.root.map((v,k)=>v+p.normal[k]*p.clearance);
+        positionContactPalm(hand,target,p.normal,gesture.pressure,elapsed/duration,p.direction,true);
+        hand.userData.model.userData.mesh.material.opacity=gesture.opacity;
+      });
     }
-
-    if (elapsed >= (id === 'pet' ? STROKE_DURATION : gestureDuration + 0.4)) {
-      leftHand.visible = false;
-      rightHand.visible = false;
-      actionState = null;
-      setActionButton(null);
-      furMaterial.uniforms.uPressure.value = 0;
-      furMaterial.uniforms.uInteractionMode.value = 0;
-      hasPreviousContact = false;
-      squeezeAmount = 0;
-      cheekSqueeze = 0;
-      headPatAmount = 0;
-      combContact=null;
+    if(elapsed>=duration){
+      leftHand.visible=rightHand.visible=false;
+      actionState=null;setActionButton(null);
+      squeezeAmount=cheekSqueeze=headPatAmount=0;
+      contactPalms.length=0;
     }
-  } else {
-    furMaterial.uniforms.uPressure.value = 0;
-    furMaterial.uniforms.uInteractionMode.value = 0;
   }
-
-  furMaterial.uniforms.uCheekSqueeze.value = cheekSqueeze;
-  if(furResponse.update(handFrameDelta,combContact,combMovement,combNormal))uploadCombField();
-  return { squeezeAmount, cheekSqueeze, headPatAmount };
+  if(furResponse.updateContacts(handFrameDelta,contactPalms))uploadCombField();
+  return {squeezeAmount,cheekSqueeze,headPatAmount};
 }
 
 const pointer = new THREE.Vector2();

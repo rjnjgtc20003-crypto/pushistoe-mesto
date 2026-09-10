@@ -14,7 +14,7 @@ const mesh=a.userData.mesh;const position=mesh.geometry.attributes.position;
 let restError=0;
 for(let i=0;i<position.count;i++) {
   const p=new THREE.Vector3().fromBufferAttribute(position,i);
-  const q=mesh.applyBoneTransform(i,p.clone());
+  const q=mesh.getVertexPosition(i,new THREE.Vector3());
   restError=Math.max(restError,p.distanceTo(q));
 }
 assert.ok(restError<1e-5,`Broken rest bind: ${restError}`);
@@ -23,11 +23,14 @@ a.updateMatrixWorld(true);
 let displacement=0;
 for(let i=0;i<position.count;i++) {
   const p=new THREE.Vector3().fromBufferAttribute(position,i);
-  const q=mesh.applyBoneTransform(i,p.clone());
+  const q=mesh.getVertexPosition(i,new THREE.Vector3());
   assert.ok(q.toArray().every(Number.isFinite));
   displacement=Math.max(displacement,p.distanceTo(q));
 }
-assert.ok(displacement>.12 && displacement<.9,`Unexpected joint motion: ${displacement}`);
+assert.ok(displacement>.03 && displacement<.3,`Unexpected gentle joint motion: ${displacement}`);
+assert.ok(mesh.morphTargetInfluences[0]>.99,'Palmar pads do not soften under pressure');
+assert.equal(b.userData.mesh.morphTargetInfluences[0],0,'Hands share pad deformation');
+assert.ok(mesh.geometry.morphAttributes.position[0].array.some(v=>Math.abs(v)>.003),'Missing soft pad corrective');
 assert.ok(b.userData.bones.every(bone=>bone.userData.angles.length()===0),'Skeletons share pose state');
 const snapshots=[30,60,120].map(fps=>{
   const hand=createHandMesh(data,material);

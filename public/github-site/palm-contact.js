@@ -25,8 +25,8 @@ function updateSkinFrame(hand) {
 }
 
 function readSkinPoint(mesh,index,target) {
-  target.fromBufferAttribute(mesh.geometry.attributes.position,index);
-  mesh.applyBoneTransform(index,target);
+  // getVertexPosition includes BOTH the pad corrective and skeletal skinning.
+  mesh.getVertexPosition(index,target);
   return target.applyMatrix4(toRig);
 }
 
@@ -98,23 +98,32 @@ export function placePalm(hand, target, outward, center, facing) {
 // Keep ALL sampled palmar skin outside the soft body's support ellipsoid.
 // The exact ray/ellipsoid exit distance accounts for hand width and finger pose.
 // A small smooth maximum avoids a jerk when the supporting skin sample changes.
-export function supportPalm(hand,bodyCenter,radii,outward,center,facing) {
+export function supportPalm(hand,bodyCenter,radii,outward,center,facing,dt) {
   const mesh=updateSkinFrame(hand);
   supportRadii.copy(radii).addScalar(0.035);
   supportDirection.copy(outward).divide(supportRadii);
   const a=supportDirection.lengthSq();
   let lift=0;
+  hand.userData.supportVertex=null;
   for(const index of hand.userData.model.userData.contactSamples) {
     readSkinPoint(mesh,index,supportPoint).sub(bodyCenter).divide(supportRadii);
     const b=supportPoint.dot(supportDirection),c=supportPoint.lengthSq()-1;
     const discriminant=b*b-a*c;
     if(discriminant<=0||b<=0)continue;
     const exit=(-b+Math.sqrt(discriminant))/a;
+    if(exit>lift)hand.userData.supportVertex=index;
     // Compact smooth maximum: distant/non-contacting samples add NO lift.
     // Log-sum-exp accumulated a visible air gap from the sample count alone.
     const softness=0.003;
     const blend=Math.max(0,softness-Math.abs(lift-exit))/softness;
     lift=Math.max(lift,exit)+blend*blend*softness*.25;
+  }
+  if(dt!==undefined){
+    // Spend part of the 0.035 soft-coat margin on temporal continuity when a
+    // fingertip becomes the supporting sample. Never spend the whole margin.
+    const previous=hand.userData.supportOffset??0;
+    const relaxed=previous+(lift-previous)*(1-Math.exp(-Math.min(dt,.05)/.07));
+    lift=Math.max(0,lift-.02,relaxed);
   }
   hand.position.addScaledVector(outward,lift);
   hand.userData.supportOffset=lift;

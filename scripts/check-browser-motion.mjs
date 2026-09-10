@@ -86,7 +86,10 @@ try {
   const context=await browser.newContext({viewport:{width:1280,height:900},deviceScaleFactor:1});
   const page=await context.newPage();
   page.on('pageerror',e=>{errors.push(e.message);console.log('PAGE ERROR:',e.message);});
-  page.on('console',msg=>{if(msg.type()==='error')errors.push(msg.text());});
+  page.on('console',msg=>{
+    const url=msg.location().url;
+    if(msg.type()==='error'&&!url.endsWith('/favicon.ico'))errors.push(`${msg.text()} (${url})`);
+  });
   // Wrap only the app's animation callback, not Playwright's own polling frames.
   await page.addInitScript(()=>{
     // Haptics need user activation; they are not part of a timing benchmark.
@@ -147,6 +150,8 @@ try {
   const phoneContext=await browser.newContext({viewport:{width:390,height:844},
     deviceScaleFactor:3,isMobile:true,hasTouch:true});
   const phone=await phoneContext.newPage();
+  phone.on('pageerror',e=>errors.push('Phone viewport: '+e.message));
+  phone.on('console',m=>{if(m.type()==='error'&&!m.text().startsWith('Blocked call to navigator.vibrate'))errors.push('Phone viewport: '+m.text());});
   await phone.goto(local,{waitUntil:'networkidle',timeout:60000});
   await phone.waitForFunction(()=>window.__sceneTest?.ready());
   await collect(phone,'mobile-dpr3-first','pet');
@@ -158,6 +163,7 @@ try {
   await phoneContext.close();
   await fs.writeFile(path.join(out,'report.json'),JSON.stringify({environment,rows,errors},null,2));
   console.log('Report:',path.join(out,'report.json'));
+  if(errors.length)process.exitCode=1;
 } finally {
   await browser?.close();
   await new Promise(resolve=>server.close(resolve));

@@ -41,6 +41,17 @@ export function handPose(gesture, pressure, phase = 0, stroke = 0) {
     pose.thumb_ip = [1,0,0];
     pose.wrist = [-7+p*(3+9*progress),0,1.5*p*Math.sin(Math.PI*progress)];
   }
+  if(pat||squeeze){
+    fingers.forEach((finger,i)=>{
+      pose[`${finger}_mcp`]=[2+i*.3+p*1.4,0,[1,0,-.5,-1][i]*p];
+      pose[`${finger}_pip`]=[1.5+i*.2+p*.4,0,0];
+      pose[`${finger}_dip`]=[.7+i*.1,0,0];
+      pose[`${finger}_palm`]=[0,[0,.4,1,1.5][i]*p,0];
+    });
+    pose.thumb_cmc=[3+p*(squeeze?3:2),-3*p,-p];
+    pose.thumb_mcp=[2+p,0,0];pose.thumb_ip=[1,0,0];
+    pose.wrist=[-7+p*(squeeze?5:4),0,0];
+  }
   return pose;
 }
 

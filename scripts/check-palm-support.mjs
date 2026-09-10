@@ -35,13 +35,13 @@ for(let step=0;step<=552;step++) {
   articulateHand(model,'pet',s.pressure,s.progress,0,1/120,step===0);
   target.fromArray(s.palm).add(bodyCenter);outward.fromArray(s.orientation);supportNormal.fromArray(s.normal);
   placePalm(hand,target,outward,center,facing);
-  supportPalm(hand,bodyCenter,radii,supportNormal,center,facing);
+  supportPalm(hand,bodyCenter,radii,supportNormal,center,facing,1/120);
   if(step%60!==0&&step!==276)continue;
   readPalmFrame(hand,center,facing);
   const groups={},vertices=[],norm=new THREE.Vector3();
   for(const {i,zone,rest} of ids) {
-    const point=new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.position,i);
-    mesh.applyBoneTransform(i,point);mesh.localToWorld(point);
+    const point=mesh.getVertexPosition(i,new THREE.Vector3());
+    mesh.localToWorld(point);
     norm.copy(point).sub(bodyCenter).divide(radii);
     const gap=(norm.length()-1)*point.distanceTo(bodyCenter)/norm.length();
     (groups[zone]??=[]).push(gap);

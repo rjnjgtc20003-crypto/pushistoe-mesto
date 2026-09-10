@@ -12,6 +12,27 @@ export function createHandMesh(data, material) {
   geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(data.skinWeight, 4));
   geometry.setIndex(data.indices);
   geometry.computeBoundingBox();
+  // A small corrective for the fleshy thenar/hypothenar pads, not a replacement
+  // for the articulated skeleton. Precomputed once: no per-frame mesh rebuild.
+  const padDelta=new Float32Array(data.positions.length);
+  const gaussian=(x,y,cx,cy,sx,sy)=>Math.exp(-(((x-cx)/sx)**2+((y-cy)/sy)**2));
+  for(let i=0;i<data.positions.length/3;i++){
+    const x=data.positions[i*3],y=data.positions[i*3+1];
+    const palmar=Math.max(0,data.normals[i*3+2]);
+    const thenar=gaussian(x,y,-.84,-1.83,.10,.14);
+    const hypothenar=gaussian(x,y,-1.05,-1.83,.08,.15);
+    const amount=Math.min(1,thenar+hypothenar)*palmar;
+    padDelta[i*3]=(x+.95)*.025*amount;
+    padDelta[i*3+2]=-.009*amount;
+  }
+  geometry.morphTargetsRelative=true;
+  geometry.morphAttributes.position=[new THREE.Float32BufferAttribute(padDelta,3)];
+  const compressed=geometry.clone();
+  for(let i=0;i<data.positions.length;i++)compressed.attributes.position.array[i]+=padDelta[i];
+  compressed.computeVertexNormals();
+  const normalDelta=Float32Array.from(compressed.attributes.normal.array,(v,i)=>v-data.normals[i]);
+  geometry.morphAttributes.normal=[new THREE.Float32BufferAttribute(normalDelta,3)];
+  compressed.dispose();
   const mesh = new THREE.SkinnedMesh(geometry, material);
   const bones = data.bones.map((info) => {
     const bone = new THREE.Bone();
@@ -77,6 +98,9 @@ const rotation = new THREE.Euler();
 const deltaRotation = new THREE.Quaternion();
 export function articulateHand(model, gesture, pressure, phase, stroke, dt, snap = false) {
   const pose = handPose(gesture, pressure, phase, stroke);
+  const mesh=model.userData.mesh,targetPad=Math.max(0,Math.min(1,pressure));
+  const padFollow=snap?1:1-Math.exp(-Math.min(dt,.05)/.085);
+  mesh.morphTargetInfluences[0]+=(targetPad-mesh.morphTargetInfluences[0])*padFollow;
   for (const bone of model.userData.bones) {
     const target = pose[bone.name] ?? [0, 0, 0];
     const a = snap ? 1 : 1 - Math.exp(-jointResponse(bone.name) * Math.min(dt, 0.05));
