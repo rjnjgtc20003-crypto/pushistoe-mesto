@@ -60,6 +60,17 @@ fur beneath the palm is constrained to its contact plane within a soft footprint
 The correction blends out on approach and release and is computed in the common
 scene rig so viewing rotation cannot change the contact.
 
+The live `pet` action now uses `stroke-motion.js`, not the uneven editor keys.
+The original keyframes remain archived in `pet.json` with their original timing;
+its `playback` section identifies the live controller and duration. One 4.2-second
+gesture comprises 0.8 s lowering, 2.6 s left-to-right travel and 0.8 s lifting.
+Quintic phase easing gives zero velocity and acceleration at the phase joins.
+Travel is parameterized by distance along the head's ellipse; the surface normal
+controls hand rotation continuously. Palm seating is exact throughout, including
+the approach/lift offset, so there is no distance-triggered snapping correction.
+Fur direction uses the analytical path tangent rather than a noisy difference
+between editor samples. Hand visibility fades at the start and finish.
+
 Reference: [ASPCA Feline-ality guide, item 8, PDF page 77](https://www.aspcapro.org/sites/default/files/Feline-ality%20Guide_PRO.pdf#page=77)
 describes long strokes with an open, slightly cupped hand. This supports the
 gesture choice; it does not prescribe our artistic contact offsets or angles.
@@ -71,3 +82,9 @@ invariance under scene rotation at five authored contact keyframes, and exports
 the actual runtime-deformed hand geometry. `scripts/render-palm-contact.py`
 renders that geometry against the body for inspection. These checks use the
 same local Three.js cache as `check-hand-runtime.mjs`.
+
+`check-stroke-motion.mjs` checks 505 successive posed-hand transforms, monotonic
+stroke travel, contact orientation, maximum speeds/acceleration and both sides
+of every phase join. `render-stroke-motion.py` renders nine chronological samples
+of the same runtime-deformed geometry. This checks the animated trajectory;
+it does not measure frame-rendering performance on physical phones.

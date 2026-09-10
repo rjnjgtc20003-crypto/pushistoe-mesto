@@ -63,3 +63,17 @@ export function palmClearance(hand, bodyCenter, radii, contact, facing) {
   surface.copy(offset).multiplyScalar(1/Math.max(length,1e-6));
   return offset.distanceTo(surface);
 }
+
+// Place an already articulated hand on a prescribed, continuous palm path.
+// Translation and orientation share the same surface frame at every instant.
+export function placePalm(hand, target, outward, center, facing) {
+  hand.position.set(0,0,0);
+  hand.quaternion.identity();
+  readPalmFrame(hand,center,facing);
+  inward.copy(outward).negate();
+  correction.setFromUnitVectors(facing,inward);
+  hand.quaternion.copy(correction);
+  readPalmFrame(hand,center,facing);
+  hand.position.copy(target).sub(center);
+  readPalmFrame(hand,center,facing);
+}

@@ -1,7 +1,16 @@
 {
   "id": "pet",
   "label": "Погладить",
-  "version": 1,
+  "version": 2,
+  "playback": {
+    "controller": "palm-surface-stroke",
+    "durationSeconds": 4.2,
+    "approachSeconds": 0.8,
+    "strokeSeconds": 2.6,
+    "liftSeconds": 0.8,
+    "keyframesRole": "Archived user draft; not sampled during playback",
+    "note": "Один плавный проход ладонью слева направо. Положение и поворот связаны с одной дугой поверхности; на стыках фаз скорость и ускорение непрерывны."
+  },
   "fps": 20,
   "durationFrames": 30,
   "durationSeconds": 1.5,

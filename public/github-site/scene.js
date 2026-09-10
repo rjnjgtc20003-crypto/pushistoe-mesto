@@ -1,6 +1,7 @@
 import * as THREE from 'https://esm.sh/three@0.180.0';
 import { createHandMesh, articulateHand } from './hand-rig.js';
-import { fitPalmToHead, palmClearance, readPalmFrame } from './palm-contact.js';
+import { placePalm } from './palm-contact.js';
+import { createStrokeSampler, STROKE_DURATION } from './stroke-motion.js';
 
 const canvas = document.querySelector('canvas');
 const colorButtons = [...document.querySelectorAll('[data-color]')];
@@ -445,7 +446,8 @@ function createHand(source, mirrored = false) {
   const hand = new THREE.Group();
   const wristPivot = new THREE.Group();
   const handPose = new THREE.Group();
-  const model = createHandMesh(source, skinMaterial);
+  const model = createHandMesh(source, skinMaterial.clone());
+  model.userData.mesh.material.transparent = true;
   handPose.add(model);
   const wristToRight = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2);
   const palmToSide = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI * 0.46);
@@ -522,6 +524,8 @@ function playAction(id) {
   movement.set(1, -0.08, 0);
   poseHand(leftHand, 0, 0, 0, true);
   poseHand(rightHand, 0, 0, 0, true);
+  leftHand.userData.model.userData.mesh.material.opacity = id === 'pet' ? 0 : 1;
+  rightHand.userData.model.userData.mesh.material.opacity = 1;
   leftHand.visible = true;
   rightHand.visible = id === 'squeeze';
   setActionButton(id);
@@ -559,6 +563,10 @@ const rightContact = new THREE.Vector3();
 const movement = new THREE.Vector3(1, -0.08, 0);
 const settleDirection = new THREE.Vector3();
 const palmFacing = new THREE.Vector3();
+const strokePalmTarget = new THREE.Vector3();
+const strokeNormal = new THREE.Vector3();
+const strokePalmCenter = new THREE.Vector3();
+const samplePalmStroke = createStrokeSampler(radii.x,radii.y,radii.z);
 let hasPreviousContact = false;
 
 function projectHandToFur(hand, target) {
@@ -601,7 +609,26 @@ function updateAction(time) {
     const release = smoothStep(gestureDuration - 0.12, gestureDuration + 0.38, elapsed);
     const smooth = animation.interpolation?.position === 'smoothstep';
 
-    if (id === 'squeeze') {
+    if (id === 'pet') {
+      const stroke = samplePalmStroke(elapsed);
+      poseHand(leftHand,stroke.pressure,0);
+      strokePalmTarget.fromArray(stroke.palm).add(creature.position);
+      strokeNormal.fromArray(stroke.normal);
+      placePalm(leftHand,strokePalmTarget,strokeNormal,strokePalmCenter,palmFacing);
+      leftHand.userData.model.userData.mesh.material.opacity=stroke.opacity;
+      contactCenter.fromArray(stroke.root);
+      movement.fromArray(stroke.tangent).normalize();
+      secondContact.copy(contactCenter).addScaledVector(movement,-0.16);
+      furMaterial.uniforms.uTouch0.value.copy(contactCenter);
+      furMaterial.uniforms.uTouch1.value.copy(secondContact);
+      furMaterial.uniforms.uStrokeDir.value.copy(movement);
+      furMaterial.uniforms.uPressure.value=stroke.pressure;
+      furMaterial.uniforms.uInteractionMode.value=0;
+      furMaterial.uniforms.uPalmPosition.value.copy(strokePalmCenter).sub(creature.position).divide(creature.scale);
+      furMaterial.uniforms.uPalmNormal.value.copy(palmFacing).negate().multiply(creature.scale).normalize();
+      furMaterial.uniforms.uPalmStrength.value=stroke.pressure;
+      hasPreviousContact=false;
+    } else if (id === 'squeeze') {
       sampleTrack(animation.keyframes, frame, leftHand, 'left', smooth);
       sampleTrack(animation.keyframes, frame, rightHand, 'right', smooth);
       const palmGap = Math.abs(leftHand.position.x - rightHand.position.x);
@@ -623,28 +650,17 @@ function updateAction(time) {
       hasPreviousContact = false;
     } else {
       sampleTrack(animation.keyframes, frame, leftHand, null, smooth);
-      const distance = id === 'pet'
-        ? palmClearance(leftHand, creature.position, radii, contactCenter, palmFacing)
-        : projectHandToFur(leftHand, contactCenter);
+      const distance = projectHandToFur(leftHand, contactCenter);
       const contactPressure = (1 - smoothStep(0.18, 0.58, distance)) * (1 - release);
       poseHand(leftHand, contactPressure, prefersReducedMotion ? 0 : phase);
-      if (id === 'pet') {
-        fitPalmToHead(leftHand, creature.position, radii, contactPressure, contactCenter, palmFacing);
-        readPalmFrame(leftHand, furMaterial.uniforms.uPalmPosition.value, palmFacing);
-        furMaterial.uniforms.uPalmPosition.value.sub(creature.position).divide(creature.scale);
-        furMaterial.uniforms.uPalmNormal.value.copy(palmFacing).negate().multiply(creature.scale).normalize();
-        furMaterial.uniforms.uPalmStrength.value = contactPressure;
-      } else {
-        settleHandIntoFur(leftHand, contactPressure, 0.065);
-        projectHandToFur(leftHand, contactCenter);
-      }
+      settleHandIntoFur(leftHand, contactPressure, 0.065);
+      projectHandToFur(leftHand, contactCenter);
       headPatAmount = id === 'head-pat' ? contactPressure * 0.03 : 0;
       if (hasPreviousContact) {
         movement.copy(contactCenter).sub(previousContact);
         if (movement.lengthSq() > 0.00001) movement.normalize();
       }
       secondContact.copy(contactCenter);
-      if (id === 'pet') secondContact.addScaledVector(movement, -0.16);
       previousContact.copy(contactCenter);
       hasPreviousContact = true;
       furMaterial.uniforms.uTouch0.value.copy(contactCenter);
@@ -655,7 +671,7 @@ function updateAction(time) {
       leftHand.position.y += release * 0.6;
     }
 
-    if (elapsed >= gestureDuration + 0.4) {
+    if (elapsed >= (id === 'pet' ? STROKE_DURATION : gestureDuration + 0.4)) {
       leftHand.visible = false;
       rightHand.visible = false;
       actionState = null;
