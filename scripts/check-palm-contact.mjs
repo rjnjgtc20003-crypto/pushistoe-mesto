@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from '../outputs/three.module.js';
 async function localModule(file) {
   const text=fs.readFileSync(new URL(`../public/github-site/${file}`,import.meta.url),'utf8')
+    .replaceAll('./body-shape.js',new URL('../public/github-site/body-shape.js',import.meta.url).href)
     .replace('https://esm.sh/three@0.180.0',new URL('../outputs/three.module.js',import.meta.url).href)
     .replace('./hand-poses.js',new URL('../public/github-site/hand-poses.js',import.meta.url).href);
   return import(`data:text/javascript;base64,${Buffer.from(text).toString('base64')}`);

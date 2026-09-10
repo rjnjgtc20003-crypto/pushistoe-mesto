@@ -1,14 +1,17 @@
 {
   "id": "pet",
   "label": "Погладить",
-  "version": 3,
+  "version": 4,
   "playback": {
-    "controller": "overlapping-palm-stroke",
-    "durationSeconds": 4.6,
-    "contactInSeconds": 1.15,
-    "contactOutSeconds": 3.45,
+    "controller": "two-pass-screen-balanced-stroke",
+    "durationSeconds": 7.45,
+    "passes": 2,
+    "passDurationSeconds": 2.9,
+    "airborneReturnSeconds": 1.65,
+    "contactInSeconds": 0.55,
+    "contactOutSeconds": 2.35,
     "keyframesRole": "Archived user draft; not sampled during playback",
-    "note": "Непрерывный проход с перекрывающимися опусканием и отрывом, без остановок при касании. Широкая опора по коже ладони и пальцев; запястье и пальцы меняют позу во время прохода."
+    "note": "Два прохода слева направо с возвратом над шерстью. Симметрия проверяется по видимым кончикам пальцев в начале и краю запястья в конце, а не по центру ладони. Пальцы раскрываются при укладывании и расслабляются при переносе."
   },
   "fps": 20,
   "durationFrames": 30,

@@ -1,4 +1,5 @@
 import * as THREE from 'https://esm.sh/three@0.180.0';
+import {cheekScale} from './body-shape.js';
 
 const points = Array.from({length:5},()=>new THREE.Vector3());
 const across = new THREE.Vector3();
@@ -15,6 +16,9 @@ const supportDirection = new THREE.Vector3();
 const supportRadii = new THREE.Vector3();
 const savedCenter = new THREE.Vector3();
 const resizeFacing = new THREE.Vector3();
+const desiredAlong = new THREE.Vector3();
+const twistCross = new THREE.Vector3();
+const rayPoint = new THREE.Vector3();
 
 function updateSkinFrame(hand) {
   hand.parent.updateWorldMatrix(true,false);
@@ -83,7 +87,7 @@ export function palmClearance(hand, bodyCenter, radii, contact, facing) {
 
 // Place an already articulated hand on a prescribed, continuous palm path.
 // Translation and orientation share the same surface frame at every instant.
-export function placePalm(hand, target, outward, center, facing) {
+export function placePalm(hand, target, outward, center, facing, fingerDirection = null) {
   hand.position.set(0,0,0);
   hand.quaternion.identity();
   readPalmFrame(hand,center,facing);
@@ -91,6 +95,19 @@ export function placePalm(hand, target, outward, center, facing) {
   correction.setFromUnitVectors(facing,inward);
   hand.quaternion.copy(correction);
   readPalmFrame(hand,center,facing);
+  if(fingerDirection){
+    // Normal alone leaves twist unconstrained. Aim the longitudinal palm axis
+    // as well, so the wrist can approach from the viewer rather than below.
+    desiredAlong.copy(fingerDirection).addScaledVector(outward,-fingerDirection.dot(outward));
+    if(desiredAlong.lengthSq()>1e-8){
+      desiredAlong.normalize();
+      const current=hand.userData.palmAlong;
+      const angle=Math.atan2(twistCross.crossVectors(current,desiredAlong).dot(outward),current.dot(desiredAlong));
+      correction.setFromAxisAngle(outward,angle);
+      hand.quaternion.premultiply(correction);
+      readPalmFrame(hand,center,facing);
+    }
+  }
   hand.position.copy(target).sub(center);
   readPalmFrame(hand,center,facing);
 }
@@ -98,7 +115,7 @@ export function placePalm(hand, target, outward, center, facing) {
 // Keep ALL sampled palmar skin outside the soft body's support ellipsoid.
 // The exact ray/ellipsoid exit distance accounts for hand width and finger pose.
 // A small smooth maximum avoids a jerk when the supporting skin sample changes.
-export function supportPalm(hand,bodyCenter,radii,outward,center,facing,dt) {
+export function supportPalm(hand,bodyCenter,radii,outward,center,facing,dt,cheeks=0) {
   const mesh=updateSkinFrame(hand);
   supportRadii.copy(radii).addScalar(0.035);
   supportDirection.copy(outward).divide(supportRadii);
@@ -110,7 +127,19 @@ export function supportPalm(hand,bodyCenter,radii,outward,center,facing,dt) {
     const b=supportPoint.dot(supportDirection),c=supportPoint.lengthSq()-1;
     const discriminant=b*b-a*c;
     if(discriminant<=0||b<=0)continue;
-    const exit=(-b+Math.sqrt(discriminant))/a;
+    let exit=(-b+Math.sqrt(discriminant))/a;
+    if(cheeks>0&&exit>0){
+      const length=supportPoint.length();
+      if(length>=cheekScale(supportPoint.x/length,supportPoint.y/length,supportPoint.z/length,cheeks))continue;
+      let lo=0,hi=exit;
+      for(let step=0;step<12;step++){
+        const mid=(lo+hi)/2;
+        rayPoint.copy(supportPoint).addScaledVector(supportDirection,mid);
+        const l=rayPoint.length();
+        if(l>=cheekScale(rayPoint.x/l,rayPoint.y/l,rayPoint.z/l,cheeks))hi=mid;else lo=mid;
+      }
+      exit=hi;
+    }
     if(exit>lift)hand.userData.supportVertex=index;
     // Compact smooth maximum: distant/non-contacting samples add NO lift.
     // Log-sum-exp accumulated a visible air gap from the sample count alone.

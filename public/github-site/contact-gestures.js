@@ -1,3 +1,4 @@
+import {cheekScale} from './body-shape.js';
 // Retargeted palm paths. The authored files remain the immutable gesture source;
 // these meaningful approach/contact/release beats remove frame-to-frame jitter.
 const clamp=x=>Math.max(0,Math.min(1,x));
@@ -17,12 +18,12 @@ export function sampleContactGesture(id,t,radii=[.88,.82,.76]){
     // Three gentle contacts, without the tiny accidental bounces of the editor.
     const clearance=beats([[0,.60],[.65,.048],[1,.20],[1.35,.045],[1.72,.20],[2.1,.043],[2.38,.043],[3.1,.60]],t);
     const pressure=gentleEase((.24-clearance)/.195);
-    const u=[-.045,Math.sqrt(1-.045**2-.13**2),.13];
+    const u=[.115,Math.sqrt(1-.115**2-.13**2),.13];
     const normal=u.map((v,i)=>v/radii[i]),len=Math.hypot(...normal);
     normal.forEach((v,i)=>normal[i]=v/len);
     const root=u.map((v,i)=>v*radii[i]);
     return {duration,opacity,pressure,squeeze:0,pat:pressure*.018,
-      palms:[{root,normal,clearance,direction:[1,0,0]}]};
+      palms:[{root,normal,clearance,direction:[1,0,0],fingerDirection:[-1,0,-.025]}]};
   }
   const approach=gentleEase(t/.95)*(1-gentleEase((t-3.25)/.85));
   const pressure=beats([[0,0],[.35,0],[1,.92],[1.6,.12],[2.15,.94],[2.7,.14],[3.15,1],[3.4,.9],[4.1,0]],t);
@@ -30,10 +31,13 @@ export function sampleContactGesture(id,t,radii=[.88,.82,.76]){
   // Do not squash the body during approach or after the palms leave its coat.
   const contactPressure=pressure*gentleEase((.44-clearance)/.32);
   const palms=[1,-1].map(side=>{
-    const u=[side*Math.sqrt(1-.28**2),0,.28];
+    const u=[side*.82,-.22,Math.sqrt(1-.82**2-.22**2)];
     const normal=u.map((v,i)=>v/radii[i]),len=Math.hypot(...normal);
     normal.forEach((v,i)=>normal[i]=v/len);
-    return {root:u.map((v,i)=>v*radii[i]),normal,clearance,direction:[0,-1,0]};
+    const approachOffset=[side*(1-approach)*.10,0,(1-approach)*.38];
+    const scale=cheekScale(...u,contactPressure);
+    return {root:u.map((v,i)=>v*radii[i]*scale),normal,clearance,approachOffset,
+      direction:[0,-1,0],fingerDirection:[-side*.3,.2,-1]};
   });
-  return {duration,opacity,pressure:contactPressure,squeeze:contactPressure*.105,pat:0,palms};
+  return {duration,opacity,pressure:contactPressure,squeeze:contactPressure*.025,pat:0,palms};
 }

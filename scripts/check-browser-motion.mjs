@@ -34,7 +34,7 @@ window.__sceneTest={
   density:(count)=>{furGeometry.instanceCount=count;},
   info:()=>({hairCount,verticesPerHair:baseHair.attributes.position.count,
     trianglesPerHair:baseHair.index.count/3,pixelRatio:renderer.getPixelRatio(),
-    handScale:leftHand.scale.x,contactSamples:leftHand.userData.model.userData.contactSamples?.length}),
+    handScale:leftHand.scale.x,contactSamples:leftHand.userData.model.userData.contactSamples?.length,strokeDuration:STROKE_DURATION}),
   play:playAction,
   rotate:(x,y)=>{targetRigRotationX=x;targetRigRotationY=y;interactionRig.rotation.set(x,y,0);rigVelocityX=rigVelocityY=0;},
   at:(seconds)=>{
@@ -67,7 +67,8 @@ function summarize(frames) {
     gapsOver25ms:gaps.filter(x=>x>25).length,gapsOver50ms:gaps.filter(x=>x>50).length,
     callbackMsP50:p(costs,.5),callbackMsP95:p(costs,.95),triangles:frames.at(-1).triangles};
 }
-async function collect(page,label,action,ms=5000,localTest=true) {
+async function collect(page,label,action,ms=null,localTest=true) {
+  ms??=localTest&&action==='pet'?(await page.evaluate(()=>window.__sceneTest.info().strokeDuration))*1000+400:5000;
   await page.evaluate(({action,localTest})=>{
     window.__recordFrames=[];
     if(action) {
@@ -156,6 +157,8 @@ try {
   await phone.waitForFunction(()=>window.__sceneTest?.ready());
   await collect(phone,'mobile-dpr3-first','pet');
   await collect(phone,'mobile-dpr3-warm','pet');
+  await collect(phone,'mobile-dpr3-head-pat','head-pat');
+  await collect(phone,'mobile-dpr3-squeeze','squeeze');
   await phone.screenshot({path:path.join(out,'mobile-dpr3-idle.png')});
   await phone.evaluate(()=>window.__sceneTest.at(2.3));
   await phone.waitForTimeout(120);

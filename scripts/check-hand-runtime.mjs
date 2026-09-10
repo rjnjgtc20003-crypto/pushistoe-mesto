@@ -27,7 +27,12 @@ for(let i=0;i<position.count;i++) {
   assert.ok(q.toArray().every(Number.isFinite));
   displacement=Math.max(displacement,p.distanceTo(q));
 }
-assert.ok(displacement>.03 && displacement<.3,`Unexpected gentle joint motion: ${displacement}`);
+// Includes the deliberate wrist extension that aims the cuff toward the viewer.
+assert.ok(displacement>.03 && displacement<.5,`Unexpected posed-hand motion: ${displacement}`);
+for(const bone of a.userData.bones){
+  if(bone.name.endsWith('_pip'))assert.ok(Math.abs(bone.userData.angles.x)<THREE.MathUtils.degToRad(5),'Squeeze curls into a grasp');
+  if(bone.name.endsWith('_dip'))assert.ok(Math.abs(bone.userData.angles.x)<THREE.MathUtils.degToRad(3),'Hooked fingertips');
+}
 assert.ok(mesh.morphTargetInfluences[0]>.99,'Palmar pads do not soften under pressure');
 assert.equal(b.userData.mesh.morphTargetInfluences[0],0,'Hands share pad deformation');
 assert.ok(mesh.geometry.morphAttributes.position[0].array.some(v=>Math.abs(v)>.003),'Missing soft pad corrective');

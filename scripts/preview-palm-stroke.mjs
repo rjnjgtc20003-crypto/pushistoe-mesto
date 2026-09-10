@@ -14,7 +14,7 @@ window.__contactPreview={
  ready:()=>!actionButtons[0].disabled,
  at:(seconds,rotation=[0,0],fur=true,action='pet')=>{
   window.__testTime=0;previousHandTime=0;actionState=null;blinkStarted=-1;nextBlink=999;
-  if(typeof furResponse!=='undefined')furResponse.reset();
+  if(typeof furResponse!=='undefined'){furResponse.reset();uploadCombField();}
   targetRigRotationX=rotation[0];targetRigRotationY=rotation[1];
   interactionRig.rotation.set(rotation[0],rotation[1],0);rigVelocityX=rigVelocityY=0;
   furCloud.visible=fur;playAction(action);
@@ -49,7 +49,7 @@ try{
   await page.waitForTimeout(60);
   await page.screenshot({path:path.join(out,`${fur?'fur':'bare'}-${label}.png`)});
  }
- for(const t of [.7,1.15,1.7,2.3,2.9,3.45,3.9,4.6,5.1]){
+ for(const t of [.15,.3,.55,1.45,2.35,2.6,2.75,2.9,3.2,3.725,4.2,4.55,4.85,5.1,6,6.9,7.15,7.45]){
   await page.evaluate(t=>window.__contactPreview.at(t),t);await page.waitForTimeout(50);
   await page.screenshot({path:path.join(out,`pet-${t}.png`)});
  }

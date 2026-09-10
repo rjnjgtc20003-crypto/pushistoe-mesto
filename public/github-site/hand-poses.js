@@ -29,17 +29,23 @@ export function handPose(gesture, pressure, phase = 0, stroke = 0) {
   if (gesture === 'pet') {
     // Small coordinated changes during the pass, not a fixed pose or a grasp.
     const progress=clamp(phase,0,1);
-    const roll=2*progress-1;
+    const carry=1-.65*clamp(stroke,0,1);
     fingers.forEach((finger,i)=> {
-      pose[`${finger}_mcp`] = [2+i*0.3+p*(1.2+roll),0,[1,0,-.5,-1][i]*p];
-      pose[`${finger}_pip`] = [1.5+i*0.2+p*.5,0,0];
-      pose[`${finger}_dip`] = [.7+i*.1,0,0];
+      // A loose airborne hand opens onto the coat. Contact poses vary gently
+      // per finger through the pass; distal joints are no longer frozen.
+      const follow=Math.sin(Math.PI*clamp(progress-i*.045,0,1));
+      const contactMcp=1.1+i*.2+[2.8,2.2,.8,-.5][i]*follow;
+      const contactPip=.7+[1.6,1.4,.6,.3][i]*follow;
+      const contactDip=.4+[.9,.8,.4,.2][i]*follow;
+      pose[`${finger}_mcp`] = [(10+i*.7)*carry*(1-p)+p*contactMcp,0,[2,0,-1,-2][i]*(1-.65*p)];
+      pose[`${finger}_pip`] = [(7+i*.3)*carry*(1-p)+p*contactPip,0,0];
+      pose[`${finger}_dip`] = [(4+i*.2)*carry*(1-p)+p*contactDip,0,0];
       pose[`${finger}_palm`] = [0,[0,.4,1,1.5][i]*p,0];
     });
-    pose.thumb_cmc = [3+2*p,-3*p,-p];
-    pose.thumb_mcp = [2,0,0];
-    pose.thumb_ip = [1,0,0];
-    pose.wrist = [-7+p*(3+9*progress),0,1.5*p*Math.sin(Math.PI*progress)];
+    pose.thumb_cmc = [7*(1-p)+p*(3+2*Math.sin(Math.PI*progress)),-3*p,-p];
+    pose.thumb_mcp = [4*(1-p)+p*(1.5+progress),0,0];
+    pose.thumb_ip = [3-2*p,0,0];
+    pose.wrist = [(-14+24*progress)*(1-p)+p*(-7+29*progress),0,2*p*Math.sin(Math.PI*progress)];
   }
   if(pat||squeeze){
     fingers.forEach((finger,i)=>{
@@ -50,7 +56,7 @@ export function handPose(gesture, pressure, phase = 0, stroke = 0) {
     });
     pose.thumb_cmc=[3+p*(squeeze?3:2),-3*p,-p];
     pose.thumb_mcp=[2+p,0,0];pose.thumb_ip=[1,0,0];
-    pose.wrist=[-7+p*(squeeze?5:4),0,0];
+    pose.wrist=[squeeze?12+12*p:-7+4*p,0,0];
   }
   return pose;
 }

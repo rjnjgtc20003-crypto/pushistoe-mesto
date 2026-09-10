@@ -1,3 +1,4 @@
+import {cheekSurface} from './body-shape.js';
 // A small persistent comb field, not a full strand/tendon simulator. The hand's
 // deformed palmar skin supplies contact; time controls recovery, not contact.
 const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
@@ -21,13 +22,38 @@ export class FurResponseField {
     this.bend=new Float32Array(this.count*4);
     this.contact=new Float32Array(this.count*4);
     this.activity=0;
+    this.radii=radii;
+    this.shape=new Float32Array(this.count*4);
     for(let y=0;y<height;y++)for(let x=0;x<width;x++){
       const i=y*width+x,azimuth=((x+.5)/width-.5)*Math.PI*2,polar=(y+.5)/height*Math.PI;
       const u=[Math.cos(azimuth)*Math.sin(polar),Math.cos(polar),Math.sin(azimuth)*Math.sin(polar)];
       const n=u.map((v,k)=>v/radii[k]),len=Math.hypot(...n);
       for(let k=0;k<3;k++){this.roots[i*3+k]=u[k]*radii[k];this.normals[i*3+k]=n[k]/len;}
     }
-    this.reset();
+    this.baseRoots=this.roots.slice();this.baseNormals=this.normals.slice();
+    this.shapeCoefficients=new Float32Array(this.count*4);
+    for(let i=0;i<this.count;i++){
+      const s=cheekSurface(Array.from(this.baseRoots.subarray(i*3,i*3+3)),radii,1);
+      this.shapeCoefficients.set([...s.normalShift,s.dent],i*4);
+    }
+    this.setShape(0);this.reset();
+  }
+  setShape(amount){
+    if(this.cheeks===amount)return false;
+    this.cheeks=amount;
+    for(let i=0;i<this.count;i++){
+      const r=i*3,s=i*4,scale=1-this.shapeCoefficients[s+3]*amount;
+      const x=this.baseNormals[r]+this.shapeCoefficients[s]*amount/scale;
+      const y=this.baseNormals[r+1]+this.shapeCoefficients[s+1]*amount/scale;
+      const z=this.baseNormals[r+2]+this.shapeCoefficients[s+2]*amount/scale;
+      const length=Math.hypot(x,y,z);
+      this.normals[r]=this.shape[s]=x/length;
+      this.normals[r+1]=this.shape[s+1]=y/length;
+      this.normals[r+2]=this.shape[s+2]=z/length;
+      this.shape[s+3]=scale;
+      for(let k=0;k<3;k++)this.roots[r+k]=this.baseRoots[r+k]*scale;
+    }
+    return true;
   }
   reset(){
     this.bend.fill(0);this.activity=0;

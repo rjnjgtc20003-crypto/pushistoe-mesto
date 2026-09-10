@@ -238,3 +238,54 @@ Verification (scene-unit tolerances, not anatomical claims):
 
 Headless Chrome is used without Computer Use. Phone-sized viewport checks still
 run on a desktop GPU; real iPhone/Safari and Android device testing remains open.
+
+## Viewer-centred staging and cheek contact, revision 6
+
+The user clarified that symmetry means the **visible leading fingertips at the
+start and trailing cuff at the end**, not equal palm-centre angles. Their example
+degrees were explanatory, not animation coordinates. The new palm path is
+deliberately asymmetric to balance the actual projected hand. Screen-space
+checks use the scene's front camera, the skinned fingertip region and cuff edge;
+their reflected angular extents differ by under 3 degrees at matched approach,
+contact and release samples. This is a visual regression tolerance, not anatomy.
+
+Petting now has two 2.9-second left-to-right passes and a 1.65-second elevated
+return (7.45 seconds total). The return does not stroke backwards. Pressure,
+position and opacity join continuously. Whole-mesh checks keep curled fingers
+clear of the core, and the moving middle return clears the longest coat. The
+return gently opens the fingers and stays below the top controls. Finger MCP,
+PIP and DIP poses now change on landing/release with small individual variations
+during contact; distal joint excursions are roughly 3–4 degrees instead of zero.
+The wrist also changes its pose rather than keeping a single loose-hand angle.
+
+Palm placement now constrains both the facing normal and the longitudinal
+finger direction. Wrist articulation still works against the contact constraint:
+holding a palm on the surface necessarily limits its global rotation. The
+visible motion comes from coordinated finger changes and the wrist/cuff relative
+to that palm, not from rotating the whole contact plane away from the body.
+
+Patting keeps its rhythm but is centred by its visible footprint. Squeezing uses
+front/lower cheek anchors and explicit finger directions, with wrists extending
+toward +Z (the viewer in the initial view). The entire rig still rotates together;
+hands never billboard or chase the camera. The approach has a forward-depth
+component instead of arriving from beneath the body.
+
+`body-shape.js` provides a bounded, symmetric radial cheek indentation. The core
+shader, persistent fur roots/normals, and palm support all use this same surface.
+Global squeeze is reduced from 10.5% to 2.5%; most deformation is local to the
+cheeks, leaving crown/back nearly unchanged. The fur gets a small additional
+shape texture. Shape coefficients are precomputed so pressure updates do not
+allocate per-root arrays each frame. This remains an artistic contact model,
+not a full soft-tissue or strand-collision simulation.
+
+Checks now include `check-visible-gestures.mjs` (both complete posed passes,
+screen-space symmetry, moving distal joints and airborne return),
+`check-stroke-motion.mjs` (repetition, forward contact and phase continuity),
+`check-cheek-shape.mjs` (localized deformation, analytic/geometric normal agreement
+and shared fur/body surface), and the updated contact tests (viewer-facing cuffs,
+cheek location, visual pat centring, full-mesh clearance and view invariance).
+The headless benchmark waits for the complete longer pet animation and checks
+all three actions at phone viewport size. It still does not test real phones.
+
+Authored keyframe arrays are preserved. The pet playback metadata documents the
+new controller; it does not replace or reinterpret the user's archived keys.

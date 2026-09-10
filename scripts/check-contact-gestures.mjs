@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import * as THREE from '../outputs/three.module.js';
 import {sampleContactGesture,CONTACT_DURATIONS} from '../public/github-site/contact-gestures.js';
 import {FurResponseField} from '../public/github-site/fur-response.js';
+import {cheekScale} from '../public/github-site/body-shape.js';
 async function localModule(file){
   const code=fs.readFileSync(new URL(`../public/github-site/${file}`,import.meta.url),'utf8')
+    .replaceAll('./body-shape.js',new URL('../public/github-site/body-shape.js',import.meta.url).href)
     .replaceAll('https://esm.sh/three@0.180.0',new URL('../outputs/three.module.js',import.meta.url).href)
     .replaceAll('./hand-poses.js',new URL('../public/github-site/hand-poses.js',import.meta.url).href);
   return import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
@@ -28,8 +30,9 @@ for(let i=0;i<data.positions.length/3;i++){
   const [x,y]=data.positions.slice(i*3,i*3+2);
   if(data.normals[i*3+2]>.4&&x<-.77&&y>=-1.82&&y<=-1.67)palmIds.push(i);
 }
-const target=new THREE.Vector3(),outward=new THREE.Vector3(),center=new THREE.Vector3(),facing=new THREE.Vector3(),v=new THREE.Vector3();
+const target=new THREE.Vector3(),outward=new THREE.Vector3(),center=new THREE.Vector3(),facing=new THREE.Vector3(),v=new THREE.Vector3(),along=new THREE.Vector3();
 const summaries=[];
+const camera=new THREE.PerspectiveCamera(31,1050/900,.1,50);camera.position.set(-.068,1.109,7.922);camera.lookAt(0,0,0);camera.updateMatrixWorld(true);
 for(const id of Object.keys(CONTACT_DURATIONS)){
   hands.forEach(hand=>{hand.userData.supportOffset=0;});
   const duration=CONTACT_DURATIONS[id],dt=1/120,field=new FurResponseField(radii.toArray());
@@ -41,14 +44,23 @@ for(const id of Object.keys(CONTACT_DURATIONS)){
     const scale=new THREE.Vector3((1-g.squeeze)/breathe,(1+g.squeeze*.72-g.pat)*breathe,(1+g.squeeze*.35+g.pat*.45)/breathe);
     const bodyCenter=new THREE.Vector3(0,-.05-g.pat*.22+Math.sin(t*1.35)*.012,0);
     const support=radii.clone().multiply(scale),contacts=[],palms=[];
+    const cheeks=id==='squeeze'?g.pressure:0;field.setShape(cheeks);
     for(let h=0;h<g.palms.length;h++){
       const hand=hands[h],p=g.palms[h],model=hand.userData.model,mesh=model.userData.mesh;
       articulateHand(model,id,g.pressure,t/duration,0,dt,step===0);
-      target.fromArray(p.root).addScaledVector(outward.fromArray(p.normal),p.clearance).multiply(scale).add(bodyCenter);
+      target.fromArray(p.root).addScaledVector(outward.fromArray(p.normal),p.clearance);
+      if(p.approachOffset)target.add(v.fromArray(p.approachOffset));
+      target.multiply(scale).add(bodyCenter);
       outward.divide(scale).normalize();
-      placePalm(hand,target,outward,center,facing);
-      maxSupport=Math.max(maxSupport,supportPalm(hand,bodyCenter,support,outward,center,facing,dt));
+      along.fromArray(p.fingerDirection).multiply(scale).normalize();
+      placePalm(hand,target,outward,center,facing,along);
+      maxSupport=Math.max(maxSupport,supportPalm(hand,bodyCenter,support,outward,center,facing,dt,cheeks));
       palms.push(center.clone());
+      if(id==='squeeze'&&g.pressure>.9){
+        const cuff=model.userData.bones.find(b=>b.name==='forearm').getWorldPosition(new THREE.Vector3()).sub(center).normalize();
+        assert.ok(cuff.z>.55&&cuff.z>Math.abs(cuff.y),'Squeeze wrists point down instead of toward the viewer');
+        assert.ok(center.y<bodyCenter.y-.1&&center.z>.3,'Palms squeeze temples instead of front/lower cheeks');
+      }
       const skin=new Float32Array(model.userData.furSamples.length*3);
       readContactSurface(hand,skin);
       for(let i=0;i<skin.length;i+=3)v.fromArray(skin,i).sub(bodyCenter).divide(scale).toArray(skin,i);
@@ -68,10 +80,13 @@ for(const id of Object.keys(CONTACT_DURATIONS)){
         rig.rotation.set(.5,2.2,0);readPalmFrame(hand,center,facing);
         assert.ok(center.distanceTo(saved)<1e-5&&facing.dot(savedFacing)>.9999,'Contact depends on viewing angle');
         rig.rotation.set(0,0,0);rig.updateMatrixWorld(true);
-        const gaps=[];
+        const gaps=[];let minScreenX=Infinity,maxScreenX=-Infinity;
         for(let i=0;i<mesh.geometry.attributes.position.count;i++){
-          mesh.getVertexPosition(i,v);mesh.localToWorld(v);v.sub(bodyCenter);
-          const distance=v.length(),relative=v.clone().divide(support).length();
+          mesh.getVertexPosition(i,v);mesh.localToWorld(v);
+          if(id==='head-pat'){const x=v.clone().project(camera).x;minScreenX=Math.min(minScreenX,x);maxScreenX=Math.max(maxScreenX,x);}
+          v.sub(bodyCenter);
+          const unit=v.clone().divide(support),length=unit.length();unit.divideScalar(length);
+          const distance=v.length(),relative=length/cheekScale(unit.x,unit.y,unit.z,cheeks);
           minimum=Math.min(minimum,relative);
           if(palmIds.includes(i))gaps.push(distance*(relative-1)/relative);
         }
@@ -79,6 +94,7 @@ for(const id of Object.keys(CONTACT_DURATIONS)){
         const median=gaps[Math.floor(gaps.length/2)];
         // At the press peak, not during first contact with the long outer coat.
         if(g.pressure>.9){
+          if(id==='head-pat')assert.ok(Math.abs((minScreenX+maxScreenX)/2-bodyCenter.clone().project(camera).x)<.035,'Patting hand is visually off-centre');
           maxMedian=Math.max(maxMedian,median);
           assert.ok(median<.10,`${id}: palm is floating at ${t}s (${median}); support ${hand.userData.supportOffset}; hand ${h}; minimum ${gaps[0]}; supporting skin ${data.positions.slice(hand.userData.supportVertex*3,hand.userData.supportVertex*3+3)}`);
           assert.ok(gaps.filter(x=>x<.12).length/gaps.length>.7,'Only fingers touch');
