@@ -7,7 +7,7 @@ bpy.ops.object.select_all(action='SELECT');bpy.ops.object.delete(use_global=Fals
 skin=bpy.data.materials.new('skin');skin.diffuse_color=(.73,.46,.34,1)
 coat=bpy.data.materials.new('coat');coat.diffuse_color=(.11,.02,.035,1)
 faces=[data['indices'][i:i+3] for i in range(0,len(data['indices']),3)]
-chosen=[4,12,16,25,42,59,68,74,81]
+chosen=[min(range(len(data['samples'])),key=lambda i:abs(data['samples'][i]['time']-t)) for t in [.2,.65,1.15,1.7,2.3,2.9,3.45,3.9,4.3]]
 for i,index in enumerate(chosen):
     sample=data['samples'][index];x=(i%3-1)*2.9;y=(1-i//3)*2.8
     mesh=bpy.data.meshes.new('hand');mesh.from_pydata(sample['vertices'],[],faces);mesh.update()

@@ -50,26 +50,44 @@ Only `assets/hand-rig.json` is sent to the browser. Diagnostic renders compare
 four poses and the authored hand transforms against a body proxy. They are
 asset checks, not browser/device testing.
 
-## Palm-supported stroking
+## Palm-supported stroking, revision 3
 
-The stroking gesture now uses five sampled points on the deformed palmar skin.
-Their centre and plane define contact, rather than the centre of the whole hand
-model. During contact, the hand is aligned tangentially to the head and the palm
-is seated above the body on the compressed coat. Fingers remain nearly extended;
-fur beneath the palm is constrained to its contact plane within a soft footprint.
-The correction blends out on approach and release and is computed in the common
-scene rig so viewing rotation cannot change the contact.
+The original uneven editor keys remain archived in `pet.json`, with their original
+timing. The `playback` section identifies the current live controller.
 
-The live `pet` action now uses `stroke-motion.js`, not the uneven editor keys.
-The original keyframes remain archived in `pet.json` with their original timing;
-its `playback` section identifies the live controller and duration. One 4.2-second
-gesture comprises 0.8 s lowering, 2.6 s left-to-right travel and 0.8 s lifting.
-Quintic phase easing gives zero velocity and acceleration at the phase joins.
-Travel is parameterized by distance along the head's ellipse; the surface normal
-controls hand rotation continuously. Palm seating is exact throughout, including
-the approach/lift offset, so there is no distance-triggered snapping correction.
-Fur direction uses the analytical path tangent rather than a noisy difference
-between editor samples. Hand visibility fades at the start and finish.
+`stroke-motion.js` now uses one 4.6-second travel curve. A smooth velocity ramp at
+the beginning/end surrounds a constant-speed middle section. Lowering over
+0–1.15 s and lifting over 3.45–4.6 s OVERLAP that travel. The old implementation
+stopped completely between its three independent phases; the new curve does not
+stop or form geometric corners at contact/release.
+
+The palm's orientation follows only part of the inner body's curvature. The wrist
+and relaxed fingers change pose throughout the pass, rather than maintaining one
+pose while the whole model rotates. Joint response remains time based. These
+small angle choices are artistic, not motion-capture data.
+
+Five deformed skin points establish the local palm frame. An additional 130 skin
+samples cover the heel, palm edges, thumb and finger pads. `supportPalm` solves
+ray/ellipsoid distances to keep them outside a padded body surface. A smooth
+maximum blends between supporting samples without a contact-switching jerk.
+This is a broad contact approximation, not a full hand/tendon physics solver.
+Full-mesh checks at 20 Hz additionally test unsampled vertices against the body.
+
+Hand scale increased from 1.24 to 1.55 (25%). This is a visual proportion choice
+for the stylized character, not a claim about an average human hand/head ratio.
+Archived pat/squeeze paths are retargeted around the actual palm centre so the
+larger meshes do not inadvertently shift the established hand contact locations.
+
+The fur contact footprint now follows the palm's orientation and larger size.
+All contact calculations use the shared interaction rig and the current breathing
+transform, so rotating the scene does not move the palm relative to the creature.
+Portrait framing reserves horizontal space for the larger hand and the full coat.
+
+Hand shaders are compiled before buttons become enabled, then geometry/bone
+textures and the canvas-output shader variant are warmed with offscreen and
+scissored draws. See [WebGLRenderer.compileAsync](https://threejs.org/docs/pages/WebGLRenderer.html#compileAsync).
+The ordinary scene is redrawn before yielding back to the browser, so the warm-up
+does not display a hand on the character.
 
 Reference: [ASPCA Feline-ality guide, item 8, PDF page 77](https://www.aspcapro.org/sites/default/files/Feline-ality%20Guide_PRO.pdf#page=77)
 describes long strokes with an open, slightly cupped hand. This supports the
@@ -83,8 +101,25 @@ the actual runtime-deformed hand geometry. `scripts/render-palm-contact.py`
 renders that geometry against the body for inspection. These checks use the
 same local Three.js cache as `check-hand-runtime.mjs`.
 
-`check-stroke-motion.mjs` checks 505 successive posed-hand transforms, monotonic
-stroke travel, contact orientation, maximum speeds/acceleration and both sides
-of every phase join. `render-stroke-motion.py` renders nine chronological samples
-of the same runtime-deformed geometry. This checks the animated trajectory;
-it does not measure frame-rendering performance on physical phones.
+`check-stroke-motion.mjs` checks 553 successive posed-hand transforms, monotonic
+supported-palm travel, nonzero speed at contact/release, scalar and vector
+acceleration, view-rotation invariance and full-mesh body clearance. The current
+maximum speed is 0.857 units/s; maximum change in speed is 2.331 units/s².
+`render-stroke-motion.py` can render nine chronological mesh samples.
+
+`check-browser-motion.mjs` runs an isolated, headless Chrome instance without
+Computer Use. It compares the published page with the local candidate, times the
+animation callbacks, plays all three gestures, and captures separate static
+checks from multiple angles and a 390 × 844 / DPR 3 viewport. Tests of a small
+viewport still use the desktop GPU; they do NOT certify iPhone/Android hardware
+or Safari. `MOTION_SITE_ROOT` selects a built site and `MOTION_REPORT_DIR` keeps
+separate baseline/candidate reports. Set `PLAYWRIGHT_MODULE` when using a bundled
+Playwright installation instead of a project dependency.
+
+In the September 10 headless test, first-pet max frame interval fell from 61.5 ms
+on the published baseline to 7.6 ms on the candidate, and the warm candidate was
+7.5 ms. The DPR 3 candidate had a 30.1 ms first-run interval and a 10.2 ms warm
+maximum; the desktop result is not a guarantee of identical device performance.
+
+`build-github-site.mjs` pins local module and fetched asset URLs to one content
+revision for GitHub Pages, avoiding mixed old/new cached modules after a release.

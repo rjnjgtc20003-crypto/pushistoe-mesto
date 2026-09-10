@@ -1,15 +1,14 @@
 {
   "id": "pet",
   "label": "Погладить",
-  "version": 2,
+  "version": 3,
   "playback": {
-    "controller": "palm-surface-stroke",
-    "durationSeconds": 4.2,
-    "approachSeconds": 0.8,
-    "strokeSeconds": 2.6,
-    "liftSeconds": 0.8,
+    "controller": "overlapping-palm-stroke",
+    "durationSeconds": 4.6,
+    "contactInSeconds": 1.15,
+    "contactOutSeconds": 3.45,
     "keyframesRole": "Archived user draft; not sampled during playback",
-    "note": "Один плавный проход ладонью слева направо. Положение и поворот связаны с одной дугой поверхности; на стыках фаз скорость и ускорение непрерывны."
+    "note": "Непрерывный проход с перекрывающимися опусканием и отрывом, без остановок при касании. Широкая опора по коже ладони и пальцев; запястье и пальцы меняют позу во время прохода."
   },
   "fps": 20,
   "durationFrames": 30,
@@ -24,7 +23,7 @@
   "handModel": {
     "source": "./hand-rig.json",
     "object": "AnatomicalHand",
-    "scale": 1.24,
+    "scale": 1.55,
     "centerGeometryBeforeAnimation": true,
     "preRotation": [
       { "axis": "Z", "radians": 1.5707963268 },

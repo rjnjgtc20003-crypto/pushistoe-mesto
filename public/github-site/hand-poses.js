@@ -27,16 +27,19 @@ export function handPose(gesture, pressure, phase = 0, stroke = 0) {
   pose.wrist = [pat ? -8 + p * 11 : -6 + p * 8, 0, clamp(stroke, -1, 1) * 4];
   pose.forearm = [0, 0, 0];
   if (gesture === 'pet') {
-    // Stroking keeps the finger pads long and relaxed; the palm bears contact.
+    // Small coordinated changes during the pass, not a fixed pose or a grasp.
+    const progress=clamp(phase,0,1);
+    const roll=2*progress-1;
     fingers.forEach((finger,i)=> {
-      pose[`${finger}_mcp`] = [3 + i * 0.5 + p * 2,0,0];
-      pose[`${finger}_pip`] = [2 + i * 0.3,0,0];
-      pose[`${finger}_dip`] = [1 + i * 0.2,0,0];
+      pose[`${finger}_mcp`] = [5+i*0.6+p*(5+3*roll),0,[1,0,-1,-2][i]*p];
+      pose[`${finger}_pip`] = [3+i*0.3+p*(1.5+roll),0,0];
+      pose[`${finger}_dip`] = [1.5+i*0.2+p*0.8,0,0];
+      pose[`${finger}_palm`] = [0,[0,1,3,5][i]*p,0];
     });
-    pose.thumb_cmc = [3,-2*p,-p];
+    pose.thumb_cmc = [3+2*p,-3*p,-p];
     pose.thumb_mcp = [2,0,0];
     pose.thumb_ip = [1,0,0];
-    pose.wrist = [-2,0,0];
+    pose.wrist = [-7+p*(3+9*progress),0,1.5*p*Math.sin(Math.PI*progress)];
   }
   return pose;
 }

@@ -1,6 +1,6 @@
 import * as THREE from 'https://esm.sh/three@0.180.0';
-import { createHandMesh, articulateHand } from './hand-rig.js';
-import { placePalm } from './palm-contact.js';
+import { createHandMesh, articulateHand, HAND_SCALE, AUTHORED_HAND_SCALE } from './hand-rig.js';
+import { placePalm, supportPalm, resizeAtPalm } from './palm-contact.js';
 import { createStrokeSampler, STROKE_DURATION } from './stroke-motion.js';
 
 const canvas = document.querySelector('canvas');
@@ -146,6 +146,7 @@ const furMaterial = new THREE.ShaderMaterial({
     uPalmStrength: { value: 0 },
     uPalmPosition: { value: new THREE.Vector3() },
     uPalmNormal: { value: new THREE.Vector3(0,1,0) },
+    uPalmAlong: { value: new THREE.Vector3(-1,0,0) },
     uInteractionMode: { value: 0 },
     uCheekSqueeze: { value: 0 },
     uBodyRadii: { value: radii.clone() },
@@ -161,6 +162,7 @@ const furMaterial = new THREE.ShaderMaterial({
     uniform float uPalmStrength;
     uniform vec3 uPalmPosition;
     uniform vec3 uPalmNormal;
+    uniform vec3 uPalmAlong;
     uniform float uInteractionMode;
     uniform float uCheekSqueeze;
     uniform vec3 uBodyRadii;
@@ -218,7 +220,13 @@ const furMaterial = new THREE.ShaderMaterial({
       p -= n * contact * tip * mix(0.028, 0.025, squeezeMode);
       // Lay the coat beneath the contacting palm plane, rather than allowing
       // long strands to pass through the middle of the hand.
-      float palmFootprint = 1.0 - smoothstep(0.18, 0.38, distance(aOffset, uTouch0));
+      // An oriented footprint spans the heel, palm and relaxed finger pads of
+      // the larger hand. Test the strand, not only its distant root on the body.
+      vec3 palmDelta = p - uPalmPosition;
+      vec3 palmAcross = normalize(cross(uPalmNormal, uPalmAlong));
+      float palmU = (dot(palmDelta, uPalmAlong) - 0.12) / 0.70;
+      float palmV = (dot(palmDelta, palmAcross) - 0.08) / 0.44;
+      float palmFootprint = 1.0 - smoothstep(0.76, 1.08, length(vec2(palmU, palmV)));
       float throughPalm = max(0.0, dot(p - uPalmPosition, uPalmNormal) + 0.008);
       p -= uPalmNormal * throughPalm * palmFootprint * uPalmStrength;
 
@@ -454,7 +462,7 @@ function createHand(source, mirrored = false) {
   handPose.quaternion.copy(palmToSide).multiply(wristToRight);
   wristPivot.add(handPose);
   hand.add(wristPivot);
-  hand.scale.set(mirrored ? -1.24 : 1.24, 1.24, 1.24);
+  hand.scale.set(mirrored ? -HAND_SCALE : HAND_SCALE, HAND_SCALE, HAND_SCALE);
   hand.userData.model = model;
   hand.userData.wristPivot = wristPivot;
   hand.userData.mirrored = mirrored;
@@ -518,7 +526,7 @@ function setActionButton(id) {
 
 function playAction(id) {
   const animation = animations.get(id);
-  if (!animation || !leftHand || !rightHand) return;
+  if (!animation || !leftHand || !rightHand || actionState?.id === id) return;
   actionState = { id, animation, startedAt: clock.getElapsedTime() };
   hasPreviousContact = false;
   movement.set(1, -0.08, 0);
@@ -549,6 +557,33 @@ async function loadHandsAndAnimations() {
   animations.set('pet', pet);
   animations.set('head-pat', headPat);
   animations.set('squeeze', squeeze);
+  // Compile before enabling the buttons. A real offscreen draw also uploads
+  // geometry and bone textures; compilation alone does not warm those resources.
+  await Promise.all([
+    renderer.compileAsync(leftHand,camera,scene),
+    renderer.compileAsync(rightHand,camera,scene),
+  ]);
+  const warmTarget=new THREE.WebGLRenderTarget(32,32);
+  const previousTarget=renderer.getRenderTarget();
+  leftHand.visible=true;
+  rightHand.visible=true;
+  renderer.setRenderTarget(warmTarget);
+  renderer.render(scene,camera);
+  renderer.setRenderTarget(previousTarget);
+  leftHand.visible=false;
+  rightHand.visible=false;
+  warmTarget.dispose();
+  // Warm the canvas-output shader variant too, with a tiny scissored draw.
+  renderer.setScissor(0,0,1,1);
+  renderer.setScissorTest(true);
+  leftHand.visible=true;
+  rightHand.visible=true;
+  renderer.render(scene,camera);
+  renderer.setScissorTest(false);
+  leftHand.visible=false;
+  rightHand.visible=false;
+  renderer.render(scene,camera);
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
   actionButtons.forEach((button) => { button.disabled = false; });
 }
 
@@ -566,6 +601,8 @@ const palmFacing = new THREE.Vector3();
 const strokePalmTarget = new THREE.Vector3();
 const strokeNormal = new THREE.Vector3();
 const strokePalmCenter = new THREE.Vector3();
+const strokeSupportNormal = new THREE.Vector3();
+const scaledBodyRadii = new THREE.Vector3();
 const samplePalmStroke = createStrokeSampler(radii.x,radii.y,radii.z);
 let hasPreviousContact = false;
 
@@ -611,10 +648,16 @@ function updateAction(time) {
 
     if (id === 'pet') {
       const stroke = samplePalmStroke(elapsed);
-      poseHand(leftHand,stroke.pressure,0);
-      strokePalmTarget.fromArray(stroke.palm).add(creature.position);
-      strokeNormal.fromArray(stroke.normal);
+      // The palm uses this frame's breathing transform, not the previous frame's.
+      updateCreatureForm(time,{squeezeAmount:0,headPatAmount:0});
+      leftHand.scale.setScalar(HAND_SCALE);
+      poseHand(leftHand,stroke.pressure,stroke.progress);
+      strokePalmTarget.fromArray(stroke.palm).multiply(creature.scale).add(creature.position);
+      strokeNormal.fromArray(stroke.orientation).divide(creature.scale).normalize();
+      strokeSupportNormal.fromArray(stroke.normal).divide(creature.scale).normalize();
       placePalm(leftHand,strokePalmTarget,strokeNormal,strokePalmCenter,palmFacing);
+      scaledBodyRadii.copy(radii).multiply(creature.scale);
+      supportPalm(leftHand,creature.position,scaledBodyRadii,strokeSupportNormal,strokePalmCenter,palmFacing);
       leftHand.userData.model.userData.mesh.material.opacity=stroke.opacity;
       contactCenter.fromArray(stroke.root);
       movement.fromArray(stroke.tangent).normalize();
@@ -626,9 +669,12 @@ function updateAction(time) {
       furMaterial.uniforms.uInteractionMode.value=0;
       furMaterial.uniforms.uPalmPosition.value.copy(strokePalmCenter).sub(creature.position).divide(creature.scale);
       furMaterial.uniforms.uPalmNormal.value.copy(palmFacing).negate().multiply(creature.scale).normalize();
+      furMaterial.uniforms.uPalmAlong.value.copy(leftHand.userData.palmAlong).divide(creature.scale).normalize();
       furMaterial.uniforms.uPalmStrength.value=stroke.pressure;
       hasPreviousContact=false;
     } else if (id === 'squeeze') {
+      leftHand.scale.setScalar(AUTHORED_HAND_SCALE);
+      rightHand.scale.set(-AUTHORED_HAND_SCALE,AUTHORED_HAND_SCALE,AUTHORED_HAND_SCALE);
       sampleTrack(animation.keyframes, frame, leftHand, 'left', smooth);
       sampleTrack(animation.keyframes, frame, rightHand, 'right', smooth);
       const palmGap = Math.abs(leftHand.position.x - rightHand.position.x);
@@ -647,8 +693,11 @@ function updateAction(time) {
       rightHand.position.x -= release * 0.5;
       poseHand(leftHand, cheekSqueeze, phase);
       poseHand(rightHand, cheekSqueeze, phase);
+      resizeAtPalm(leftHand,HAND_SCALE);
+      resizeAtPalm(rightHand,HAND_SCALE);
       hasPreviousContact = false;
     } else {
+      leftHand.scale.setScalar(AUTHORED_HAND_SCALE);
       sampleTrack(animation.keyframes, frame, leftHand, null, smooth);
       const distance = projectHandToFur(leftHand, contactCenter);
       const contactPressure = (1 - smoothStep(0.18, 0.58, distance)) * (1 - release);
@@ -669,6 +718,7 @@ function updateAction(time) {
       furMaterial.uniforms.uPressure.value = contactPressure;
       furMaterial.uniforms.uInteractionMode.value = id === 'head-pat' ? 1 : 0;
       leftHand.position.y += release * 0.6;
+      resizeAtPalm(leftHand,HAND_SCALE);
     }
 
     if (elapsed >= (id === 'pet' ? STROKE_DURATION : gestureDuration + 0.4)) {
@@ -797,6 +847,8 @@ function resize() {
   const height = innerHeight;
   renderer.setSize(width, height, false);
   camera.aspect = width / height;
+  // Keep a useful horizontal viewing angle for the larger hand on portrait phones.
+  camera.fov=THREE.MathUtils.radToDeg(2*Math.atan(Math.tan(THREE.MathUtils.degToRad(31)/2)*Math.max(1,0.95/camera.aspect)));
   camera.updateProjectionMatrix();
 }
 
@@ -804,6 +856,15 @@ addEventListener('resize', resize, { passive: true });
 resize();
 
 const clock = new THREE.Clock();
+
+function updateCreatureForm(time,deformation) {
+  const breathe = prefersReducedMotion ? 1 : 1 + Math.sin(time * 1.35) * 0.012;
+  const squeezeX = 1 - deformation.squeezeAmount;
+  const squeezeY = 1 + deformation.squeezeAmount * 0.72 - deformation.headPatAmount;
+  const squeezeZ = 1 + deformation.squeezeAmount * 0.35 + deformation.headPatAmount * 0.45;
+  creature.scale.set(squeezeX / breathe, squeezeY * breathe, squeezeZ / breathe);
+  creature.position.y = -0.05 - deformation.headPatAmount * 0.22 + (prefersReducedMotion ? 0 : Math.sin(time * 1.35) * 0.012);
+}
 
 function animate() {
   const time = clock.getElapsedTime();
@@ -834,12 +895,7 @@ function animate() {
   interactionRig.rotation.y += (targetRigRotationY - interactionRig.rotation.y) * 0.14;
   camera.position.z += (targetCameraZ - camera.position.z) * 0.14;
   camera.lookAt(0, 0, 0);
-  const breathe = prefersReducedMotion ? 1 : 1 + Math.sin(time * 1.35) * 0.012;
-  const squeezeX = 1 - deformation.squeezeAmount;
-  const squeezeY = 1 + deformation.squeezeAmount * 0.72 - deformation.headPatAmount;
-  const squeezeZ = 1 + deformation.squeezeAmount * 0.35 + deformation.headPatAmount * 0.45;
-  creature.scale.set(squeezeX / breathe, squeezeY * breathe, squeezeZ / breathe);
-  creature.position.y = -0.05 - deformation.headPatAmount * 0.22 + (prefersReducedMotion ? 0 : Math.sin(time * 1.35) * 0.012);
+  updateCreatureForm(time,deformation);
 
   furMaterial.uniforms.uTime.value = time;
   renderer.render(scene, camera);

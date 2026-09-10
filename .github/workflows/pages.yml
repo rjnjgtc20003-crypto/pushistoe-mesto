@@ -27,10 +27,12 @@ jobs:
         uses: actions/configure-pages@v5
         with:
           enablement: true
+      - name: Build versioned site
+        run: node scripts/build-github-site.mjs
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: public/github-site
+          path: outputs/github-pages
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4

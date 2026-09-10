@@ -1,6 +1,9 @@
 import * as THREE from 'https://esm.sh/three@0.180.0';
 import { handPose, jointResponse } from './hand-poses.js';
 
+export const HAND_SCALE = 1.55;
+export const AUTHORED_HAND_SCALE = 1.24;
+
 export function createHandMesh(data, material) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(data.positions, 3));
@@ -45,6 +48,17 @@ export function createHandMesh(data, material) {
     if (best < 0) throw new Error('Missing palmar surface');
     return best;
   });
+  // Broad palmar contact: a spatial sample of heel, both palm edges, thumb and
+  // finger pads. Keep the palmar-most vertex per cell, not just the centre point.
+  const pads=new Map();
+  for(let i=0;i<data.positions.length/3;i++) {
+    const x=data.positions[i*3],y=data.positions[i*3+1],z=data.positions[i*3+2];
+    if(data.normals[i*3+2]<0.25||y< -2.04)continue;
+    const cell=`${Math.round(x/0.055)},${Math.round(y/0.055)}`;
+    const old=pads.get(cell);
+    if(old===undefined||z>data.positions[old*3+2])pads.set(cell,i);
+  }
+  model.userData.contactSamples=[...pads.values()];
   return model;
 }
 
