@@ -33,6 +33,18 @@ export function createHandMesh(data, material) {
   model.position.sub(geometry.boundingBox.getCenter(new THREE.Vector3()));
   model.userData.mesh = mesh;
   model.userData.bones = bones;
+  // Sample the actual palmar skin, not the model origin or finger endpoints.
+  model.userData.palmSamples = [[-.94,-1.78],[-1.04,-1.78],[-.84,-1.78],[-.94,-1.66],[-.94,-1.88]].map(([x,y]) => {
+    let best = -1;
+    let distance = Infinity;
+    for (let i=0;i<data.positions.length/3;i++) {
+      if (data.normals[i*3+2] < 0.45) continue;
+      const d=(data.positions[i*3]-x)**2+(data.positions[i*3+1]-y)**2;
+      if (d<distance) { distance=d; best=i; }
+    }
+    if (best < 0) throw new Error('Missing palmar surface');
+    return best;
+  });
   return model;
 }
 

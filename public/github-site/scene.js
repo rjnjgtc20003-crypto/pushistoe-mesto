@@ -1,5 +1,6 @@
 import * as THREE from 'https://esm.sh/three@0.180.0';
 import { createHandMesh, articulateHand } from './hand-rig.js';
+import { fitPalmToHead, palmClearance, readPalmFrame } from './palm-contact.js';
 
 const canvas = document.querySelector('canvas');
 const colorButtons = [...document.querySelectorAll('[data-color]')];
@@ -141,6 +142,9 @@ const furMaterial = new THREE.ShaderMaterial({
     uTouch1: { value: new THREE.Vector3(4, 4, 4) },
     uStrokeDir: { value: new THREE.Vector3(1, -0.08, 0).normalize() },
     uPressure: { value: 0 },
+    uPalmStrength: { value: 0 },
+    uPalmPosition: { value: new THREE.Vector3() },
+    uPalmNormal: { value: new THREE.Vector3(0,1,0) },
     uInteractionMode: { value: 0 },
     uCheekSqueeze: { value: 0 },
     uBodyRadii: { value: radii.clone() },
@@ -153,6 +157,9 @@ const furMaterial = new THREE.ShaderMaterial({
     uniform vec3 uTouch1;
     uniform vec3 uStrokeDir;
     uniform float uPressure;
+    uniform float uPalmStrength;
+    uniform vec3 uPalmPosition;
+    uniform vec3 uPalmNormal;
     uniform float uInteractionMode;
     uniform float uCheekSqueeze;
     uniform vec3 uBodyRadii;
@@ -208,6 +215,11 @@ const furMaterial = new THREE.ShaderMaterial({
       float bendDistance = mix(mix(0.075, 0.17, longHair), mix(0.07, 0.13, longHair), squeezeMode);
       p += bendDirection * contact * tip * bendDistance;
       p -= n * contact * tip * mix(0.028, 0.025, squeezeMode);
+      // Lay the coat beneath the contacting palm plane, rather than allowing
+      // long strands to pass through the middle of the hand.
+      float palmFootprint = 1.0 - smoothstep(0.18, 0.38, distance(aOffset, uTouch0));
+      float throughPalm = max(0.0, dot(p - uPalmPosition, uPalmNormal) + 0.008);
+      p -= uPalmNormal * throughPalm * palmFootprint * uPalmStrength;
 
       vec3 normalizedRoot = aOffset / uBodyRadii;
       float cheekFront = smoothstep(0.25, 0.86, normalizedRoot.z);
@@ -546,6 +558,7 @@ const leftContact = new THREE.Vector3();
 const rightContact = new THREE.Vector3();
 const movement = new THREE.Vector3(1, -0.08, 0);
 const settleDirection = new THREE.Vector3();
+const palmFacing = new THREE.Vector3();
 let hasPreviousContact = false;
 
 function projectHandToFur(hand, target) {
@@ -572,6 +585,7 @@ function settleHandIntoFur(hand, pressure, depth) {
 let handFrameDelta = 1 / 60;
 let previousHandTime = 0;
 function updateAction(time) {
+  furMaterial.uniforms.uPalmStrength.value = 0;
   handFrameDelta = Math.min(0.05, Math.max(0, time - previousHandTime));
   previousHandTime = time;
   let squeezeAmount = 0;
@@ -609,10 +623,21 @@ function updateAction(time) {
       hasPreviousContact = false;
     } else {
       sampleTrack(animation.keyframes, frame, leftHand, null, smooth);
-      const distance = projectHandToFur(leftHand, contactCenter);
+      const distance = id === 'pet'
+        ? palmClearance(leftHand, creature.position, radii, contactCenter, palmFacing)
+        : projectHandToFur(leftHand, contactCenter);
       const contactPressure = (1 - smoothStep(0.18, 0.58, distance)) * (1 - release);
-      settleHandIntoFur(leftHand, contactPressure, id === 'head-pat' ? 0.065 : 0.05);
-      projectHandToFur(leftHand, contactCenter);
+      poseHand(leftHand, contactPressure, prefersReducedMotion ? 0 : phase);
+      if (id === 'pet') {
+        fitPalmToHead(leftHand, creature.position, radii, contactPressure, contactCenter, palmFacing);
+        readPalmFrame(leftHand, furMaterial.uniforms.uPalmPosition.value, palmFacing);
+        furMaterial.uniforms.uPalmPosition.value.sub(creature.position).divide(creature.scale);
+        furMaterial.uniforms.uPalmNormal.value.copy(palmFacing).negate().multiply(creature.scale).normalize();
+        furMaterial.uniforms.uPalmStrength.value = contactPressure;
+      } else {
+        settleHandIntoFur(leftHand, contactPressure, 0.065);
+        projectHandToFur(leftHand, contactCenter);
+      }
       headPatAmount = id === 'head-pat' ? contactPressure * 0.03 : 0;
       if (hasPreviousContact) {
         movement.copy(contactCenter).sub(previousContact);
@@ -627,7 +652,6 @@ function updateAction(time) {
       furMaterial.uniforms.uStrokeDir.value.copy(movement);
       furMaterial.uniforms.uPressure.value = contactPressure;
       furMaterial.uniforms.uInteractionMode.value = id === 'head-pat' ? 1 : 0;
-      poseHand(leftHand, contactPressure, prefersReducedMotion ? 0 : phase, id === 'pet' ? movement.x : 0);
       leftHand.position.y += release * 0.6;
     }
 

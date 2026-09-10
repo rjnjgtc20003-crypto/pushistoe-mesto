@@ -49,3 +49,25 @@ The editable rig and diagnostic renders are generated in ignored `outputs/`.
 Only `assets/hand-rig.json` is sent to the browser. Diagnostic renders compare
 four poses and the authored hand transforms against a body proxy. They are
 asset checks, not browser/device testing.
+
+## Palm-supported stroking
+
+The stroking gesture now uses five sampled points on the deformed palmar skin.
+Their centre and plane define contact, rather than the centre of the whole hand
+model. During contact, the hand is aligned tangentially to the head and the palm
+is seated above the body on the compressed coat. Fingers remain nearly extended;
+fur beneath the palm is constrained to its contact plane within a soft footprint.
+The correction blends out on approach and release and is computed in the common
+scene rig so viewing rotation cannot change the contact.
+
+Reference: [ASPCA Feline-ality guide, item 8, PDF page 77](https://www.aspcapro.org/sites/default/files/Feline-ality%20Guide_PRO.pdf#page=77)
+describes long strokes with an open, slightly cupped hand. This supports the
+gesture choice; it does not prescribe our artistic contact offsets or angles.
+The literature also distinguishes full-palm stroking from two-finger stroking:
+[I wanna hold your hand](https://pmc.ncbi.nlm.nih.gov/articles/PMC10079127/).
+
+`node scripts/check-palm-contact.mjs` verifies palmar placement, tangency and
+invariance under scene rotation at five authored contact keyframes, and exports
+the actual runtime-deformed hand geometry. `scripts/render-palm-contact.py`
+renders that geometry against the body for inspection. These checks use the
+same local Three.js cache as `check-hand-runtime.mjs`.

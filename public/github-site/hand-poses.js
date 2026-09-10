@@ -26,6 +26,18 @@ export function handPose(gesture, pressure, phase = 0, stroke = 0) {
   pose.thumb_ip = [2 + p * (squeeze ? 4 : 1), 0, 0];
   pose.wrist = [pat ? -8 + p * 11 : -6 + p * 8, 0, clamp(stroke, -1, 1) * 4];
   pose.forearm = [0, 0, 0];
+  if (gesture === 'pet') {
+    // Stroking keeps the finger pads long and relaxed; the palm bears contact.
+    fingers.forEach((finger,i)=> {
+      pose[`${finger}_mcp`] = [3 + i * 0.5 + p * 2,0,0];
+      pose[`${finger}_pip`] = [2 + i * 0.3,0,0];
+      pose[`${finger}_dip`] = [1 + i * 0.2,0,0];
+    });
+    pose.thumb_cmc = [3,-2*p,-p];
+    pose.thumb_mcp = [2,0,0];
+    pose.thumb_ip = [1,0,0];
+    pose.wrist = [-2,0,0];
+  }
   return pose;
 }
 
