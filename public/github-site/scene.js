@@ -1,7 +1,8 @@
 import * as THREE from 'https://esm.sh/three@0.180.0';
 import { createHandMesh, articulateHand, HAND_SCALE, AUTHORED_HAND_SCALE } from './hand-rig.js';
-import { placePalm, supportPalm, resizeAtPalm } from './palm-contact.js';
+import { placePalm, supportPalm, resizeAtPalm, readContactSurface } from './palm-contact.js';
 import { createStrokeSampler, STROKE_DURATION } from './stroke-motion.js';
+import { FurResponseField } from './fur-response.js';
 
 const canvas = document.querySelector('canvas');
 const colorButtons = [...document.querySelectorAll('[data-color]')];
@@ -114,8 +115,13 @@ for (let i = 0; i < hairCount; i += 1) {
   hairPattern.push(THREE.MathUtils.smoothstep(redPattern, 0.34, 0.7));
 }
 
-const baseHair = new THREE.ConeGeometry(0.0026, 0.34, 5, 5, false);
+const baseHair = new THREE.ConeGeometry(0.0026, 0.34, 3, 7, false);
 baseHair.translate(0, 0.17, 0);
+// More samples near the curved root, with no additional radial faces.
+for(let i=0;i<baseHair.attributes.position.count;i++){
+  const a=baseHair.attributes.position.getY(i)/.34;
+  baseHair.attributes.position.setY(i,.34*Math.pow(Math.max(0,a),1.35));
+}
 const furGeometry = new THREE.InstancedBufferGeometry();
 furGeometry.index = baseHair.index;
 furGeometry.setAttribute('position', baseHair.getAttribute('position'));
@@ -134,6 +140,24 @@ furGeometry.setAttribute('aRed', hairRedAttribute);
 furGeometry.instanceCount = hairCount;
 furGeometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1.45);
 
+const furResponse=new FurResponseField(radii.toArray());
+function createCombTexture(){
+  const texture=new THREE.DataTexture(new Uint16Array(furResponse.count*4),furResponse.width,furResponse.height,THREE.RGBAFormat,THREE.HalfFloatType);
+  texture.minFilter=texture.magFilter=THREE.LinearFilter;
+  texture.wrapS=THREE.RepeatWrapping;
+  texture.needsUpdate=true;
+  return texture;
+}
+const combTexture=createCombTexture(),combContactTexture=createCombTexture();
+function uploadCombField(){
+  for(let i=0;i<furResponse.bend.length;i++){
+    combTexture.image.data[i]=THREE.DataUtils.toHalfFloat(furResponse.bend[i]);
+    combContactTexture.image.data[i]=THREE.DataUtils.toHalfFloat(furResponse.contact[i]);
+  }
+  combTexture.needsUpdate=combContactTexture.needsUpdate=true;
+}
+uploadCombField();
+
 const furMaterial = new THREE.ShaderMaterial({
   side: THREE.DoubleSide,
   uniforms: {
@@ -151,6 +175,8 @@ const furMaterial = new THREE.ShaderMaterial({
     uCheekSqueeze: { value: 0 },
     uBodyRadii: { value: radii.clone() },
     uGradientMode: { value: 0 },
+    uComb: { value: combTexture },
+    uCombContact: { value: combContactTexture },
   },
   vertexShader: `
     uniform float uTime;
@@ -167,6 +193,8 @@ const furMaterial = new THREE.ShaderMaterial({
     uniform float uCheekSqueeze;
     uniform vec3 uBodyRadii;
     uniform float uGradientMode;
+    uniform sampler2D uComb;
+    uniform sampler2D uCombContact;
     attribute vec3 aOffset;
     attribute vec3 aNormal;
     attribute float aPhase;
@@ -196,7 +224,9 @@ const furMaterial = new THREE.ShaderMaterial({
       float contactEdge = mix(0.41, 0.42, squeezeMode);
       float touch0 = 1.0 - smoothstep(0.12, contactEdge, distance(aOffset, uTouch0));
       float touch1 = 1.0 - smoothstep(0.12, contactEdge, distance(aOffset, uTouch1));
-      float contact = pow(max(touch0, touch1), mix(1.0, 1.45, squeezeMode)) * uPressure;
+      // Archived pat/squeeze keep their separate look. Petting uses actual skin
+      // contact and a persistent comb field instead of a timer-driven dent.
+      float contact = pow(max(touch0, touch1), mix(1.0, 1.45, squeezeMode)) * uPressure * spreadMode;
       float longHair = smoothstep(0.72, 1.04, aLength);
       float compression = mix(
         mix(0.3, 0.44, longHair) + spreadMode * 0.04,
@@ -218,6 +248,25 @@ const furMaterial = new THREE.ShaderMaterial({
       float bendDistance = mix(mix(0.075, 0.17, longHair), mix(0.07, 0.13, longHair), squeezeMode);
       p += bendDirection * contact * tip * bendDistance;
       p -= n * contact * tip * mix(0.028, 0.025, squeezeMode);
+      vec3 unitRoot=normalize(aOffset/uBodyRadii);
+      vec2 combUv=vec2(atan(unitRoot.z,unitRoot.x)/6.28318530718+0.5,acos(clamp(unitRoot.y,-1.0,1.0))/3.14159265359);
+      vec4 comb=texture2D(uComb,combUv);
+      vec3 lean=comb.xyz-n*dot(comb.xyz,n);
+      float angle=length(lean)*mix(0.86,1.0,longHair);
+      if(angle>0.0001){
+        vec3 combDirection=normalize(lean);
+        float turn=0.2;
+        float a=angle*min(along,turn)/turn;
+        float tail=max(0.0,along-turn);
+        float normalLength=turn*sin(a)/angle+tail*cos(angle);
+        float tangentLength=turn*(1.0-cos(a))/angle+tail*sin(angle);
+        p+=aLength*0.34*(n*(normalLength-along)+combDirection*tangentLength);
+      }
+      // Conservative local contact plane interpolated from posed skin samples.
+      // It only guards current contact; the comb field retains the released bend.
+      vec4 coatSupport=texture2D(uCombContact,combUv);
+      vec3 coatNormal=normalize(coatSupport.xyz);
+      p-=coatNormal*max(0.0,dot(p,coatNormal)-coatSupport.w);
       // Lay the coat beneath the contacting palm plane, rather than allowing
       // long strands to pass through the middle of the hand.
       // An oriented footprint spans the heel, palm and relaxed finger pads of
@@ -527,6 +576,9 @@ function setActionButton(id) {
 function playAction(id) {
   const animation = animations.get(id);
   if (!animation || !leftHand || !rightHand || actionState?.id === id) return;
+  // Legacy gestures own their deformation; do not double-compress a retained
+  // petting bend when the user switches directly into patting or squeezing.
+  if(id!=='pet'){furResponse.reset();uploadCombField();}
   actionState = { id, animation, startedAt: clock.getElapsedTime() };
   hasPreviousContact = false;
   movement.set(1, -0.08, 0);
@@ -604,6 +656,9 @@ const strokePalmCenter = new THREE.Vector3();
 const strokeSupportNormal = new THREE.Vector3();
 const scaledBodyRadii = new THREE.Vector3();
 const samplePalmStroke = createStrokeSampler(radii.x,radii.y,radii.z);
+let palmarSkin=null;
+const combMovement=[1,0,0];
+const combNormal=[0,1,0];
 let hasPreviousContact = false;
 
 function projectHandToFur(hand, target) {
@@ -636,6 +691,7 @@ function updateAction(time) {
   let squeezeAmount = 0;
   let cheekSqueeze = 0;
   let headPatAmount = 0;
+  let combContact=null;
 
   if (actionState) {
     const { id, animation, startedAt } = actionState;
@@ -658,6 +714,16 @@ function updateAction(time) {
       placePalm(leftHand,strokePalmTarget,strokeNormal,strokePalmCenter,palmFacing);
       scaledBodyRadii.copy(radii).multiply(creature.scale);
       supportPalm(leftHand,creature.position,scaledBodyRadii,strokeSupportNormal,strokePalmCenter,palmFacing);
+      const sampleCount=leftHand.userData.model.userData.furSamples.length;
+      if(!palmarSkin||palmarSkin.length!==sampleCount*3)palmarSkin=new Float32Array(sampleCount*3);
+      readContactSurface(leftHand,palmarSkin);
+      for(let i=0;i<palmarSkin.length;i+=3){
+        palmarSkin[i]=(palmarSkin[i]-creature.position.x)/creature.scale.x;
+        palmarSkin[i+1]=(palmarSkin[i+1]-creature.position.y)/creature.scale.y;
+        palmarSkin[i+2]=(palmarSkin[i+2]-creature.position.z)/creature.scale.z;
+      }
+      combContact=palmarSkin;
+      for(let i=0;i<3;i++)combMovement[i]=stroke.tangent[i];
       leftHand.userData.model.userData.mesh.material.opacity=stroke.opacity;
       contactCenter.fromArray(stroke.root);
       movement.fromArray(stroke.tangent).normalize();
@@ -669,8 +735,9 @@ function updateAction(time) {
       furMaterial.uniforms.uInteractionMode.value=0;
       furMaterial.uniforms.uPalmPosition.value.copy(strokePalmCenter).sub(creature.position).divide(creature.scale);
       furMaterial.uniforms.uPalmNormal.value.copy(palmFacing).negate().multiply(creature.scale).normalize();
+      furMaterial.uniforms.uPalmNormal.value.toArray(combNormal);
       furMaterial.uniforms.uPalmAlong.value.copy(leftHand.userData.palmAlong).divide(creature.scale).normalize();
-      furMaterial.uniforms.uPalmStrength.value=stroke.pressure;
+      furMaterial.uniforms.uPalmStrength.value=0;
       hasPreviousContact=false;
     } else if (id === 'squeeze') {
       leftHand.scale.setScalar(AUTHORED_HAND_SCALE);
@@ -732,6 +799,7 @@ function updateAction(time) {
       squeezeAmount = 0;
       cheekSqueeze = 0;
       headPatAmount = 0;
+      combContact=null;
     }
   } else {
     furMaterial.uniforms.uPressure.value = 0;
@@ -739,6 +807,7 @@ function updateAction(time) {
   }
 
   furMaterial.uniforms.uCheekSqueeze.value = cheekSqueeze;
+  if(furResponse.update(handFrameDelta,combContact,combMovement,combNormal))uploadCombField();
   return { squeezeAmount, cheekSqueeze, headPatAmount };
 }
 

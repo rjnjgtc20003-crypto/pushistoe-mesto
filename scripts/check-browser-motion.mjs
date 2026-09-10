@@ -39,6 +39,7 @@ window.__sceneTest={
   rotate:(x,y)=>{targetRigRotationX=x;targetRigRotationY=y;interactionRig.rotation.set(x,y,0);rigVelocityX=rigVelocityY=0;},
   at:(seconds)=>{
     window.__fixedTime=0;previousHandTime=0;actionState=null;blinkStarted=-1;nextBlink=999;playAction('pet');
+    if(typeof furResponse!=='undefined')furResponse.reset();
     for(let t=1/120;t<seconds;t+=1/120)updateAction(t);
     window.__fixedTime=seconds;
   },
@@ -46,6 +47,7 @@ window.__sceneTest={
 const server=http.createServer(async(req,res)=>{
   try {
     const pathname=decodeURIComponent(new URL(req.url,'http://localhost').pathname);
+    if(pathname==='/favicon.ico'){res.writeHead(204).end();return;}
     const filename=path.resolve(root,'.'+(pathname==='/'?'/index.html':pathname));
     if(!filename.startsWith(root+path.sep)) {res.writeHead(403).end();return;}
     const content=filename===path.join(root,'scene.js')?injected:await fs.readFile(filename);
@@ -87,6 +89,8 @@ try {
   page.on('console',msg=>{if(msg.type()==='error')errors.push(msg.text());});
   // Wrap only the app's animation callback, not Playwright's own polling frames.
   await page.addInitScript(()=>{
+    // Haptics need user activation; they are not part of a timing benchmark.
+    navigator.vibrate=()=>false;
     const nativeRAF=requestAnimationFrame.bind(window);
     window.requestAnimationFrame=callback=>nativeRAF(timestamp=>{
       if(callback.name!=='animate'||location.hostname==='127.0.0.1')return callback(timestamp);

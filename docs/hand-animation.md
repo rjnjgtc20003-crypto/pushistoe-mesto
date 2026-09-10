@@ -50,7 +50,7 @@ Only `assets/hand-rig.json` is sent to the browser. Diagnostic renders compare
 four poses and the authored hand transforms against a body proxy. They are
 asset checks, not browser/device testing.
 
-## Palm-supported stroking, revision 3
+## Palm-supported stroking, revision 3 (superseded contact approximation)
 
 The original uneven editor keys remain archived in `pet.json`, with their original
 timing. The `playback` section identifies the current live controller.
@@ -123,3 +123,63 @@ maximum; the desktop result is not a guarantee of identical device performance.
 
 `build-github-site.mjs` pins local module and fetched asset URLs to one content
 revision for GitHub Pages, avoiding mixed old/new cached modules after a release.
+
+## Distributed palm support and persistent fur response, revision 4
+
+The research-led change is scoped to **petting**. The current hand scale (1.55),
+the archived authoring tracks, the other two gestures, face and colour modes are
+preserved. This is still an artistic approximation, not a tendon/skin solver.
+
+The palm now follows the full surface normal. The previously flattened rotation
+arc put the trailing fingers into the body, and the collision guard lifted the
+whole palm to accommodate them. Contact clearance is 0.045 scene units and the
+petting MCP/PIP/DIP poses remain open. The support guard uses a compact smooth
+maximum; non-contacting samples no longer accumulate an artificial air gap.
+
+`check-palm-support.mjs` classifies posed skin into palm, heel, knuckle pads and
+finger regions. The middle-of-pass palm median gap fell from 0.172 to 0.060
+scene units. At the measured contact times, roughly 80-83% of the central palm
+samples are within 0.10 units of the core, alongside heel/knuckle support. These
+are **sample-based geometric diagnostics**, not physical pressure or measured
+contact area. The tolerances are regression thresholds for this scene, not
+human biological standards. The full-mesh collision and continuous-motion tests
+also remain in place.
+
+`fur-response.js` carries a 64 x 32 persistent comb field in creature-local
+coordinates. It samples the deformed palmar skin (including wrist and side
+coverage separate from body-support samples). No petting dent is triggered by
+the pressure timeline alone. Nearby skin sets a bending target; released bends
+decay over time. The same field drives the dense rendered coat using two small
+linearly filtered half-float textures, with no per-hair CPU simulation.
+
+The centreline turns over its first fifth and continues tangentially, preserving
+arc length before collision correction. A conservative interpolated skin-plane
+guard still modifies the curve during contact: this is not an exact strand/mesh
+collision or friction solver, and it can shorten the numerical curve locally.
+Guide interpolation and occlusion by foreground fur remain approximations.
+Switching directly to a legacy gesture clears the comb field to avoid applying
+both its old compression and a retained petting bend to the same hairs.
+The coat has more samples along the root bend but fewer radial faces, reducing
+the triangle count without reducing the number of hairs.
+
+Checks:
+
+- `node scripts/check-palm-support.mjs`: broad palm/heel/knuckle proximity, not
+  just fingertip non-penetration. `CONTACT_REPORT` names the diagnostic export.
+- `node scripts/check-fur-response.mjs`: pre-collision arc length, localized
+  contact, no dent beneath a hovering hand, gradual recovery, 30/60/120 Hz.
+- `node scripts/check-stroke-motion.mjs`: 553 successive poses, surface-relative
+  rotation invariance, continuity, whole-mesh clearance. Maximum speed 0.791,
+  angular speed 0.617, scalar acceleration 2.176 in scene units and seconds.
+- `node scripts/preview-palm-stroke.mjs`: isolated headless chronological and
+  front/side/back/top previews, including the bare core. The existing browser
+  benchmark checks real-time playback and a phone-sized DPR 3 viewport.
+
+The research report is a separate local artifact; it is not deployed with the
+site. The ANSUR/AIST measurements do not certify this sphere as a human head or
+justify further hand scaling without measuring the model's anatomical landmarks.
+
+On the Intel UHD desktop headless check, the new petting callback cost had a
+1.9 ms p95 and the run maintained about 144 fps. The 390 x 844 / DPR 3 viewport
+averaged about 106 fps, with one 36 ms first-run interval and an 11.7 ms warm
+maximum. These are desktop measurements, not actual iPhone/Android benchmarks.

@@ -31,10 +31,10 @@ export function handPose(gesture, pressure, phase = 0, stroke = 0) {
     const progress=clamp(phase,0,1);
     const roll=2*progress-1;
     fingers.forEach((finger,i)=> {
-      pose[`${finger}_mcp`] = [5+i*0.6+p*(5+3*roll),0,[1,0,-1,-2][i]*p];
-      pose[`${finger}_pip`] = [3+i*0.3+p*(1.5+roll),0,0];
-      pose[`${finger}_dip`] = [1.5+i*0.2+p*0.8,0,0];
-      pose[`${finger}_palm`] = [0,[0,1,3,5][i]*p,0];
+      pose[`${finger}_mcp`] = [2+i*0.3+p*(1.2+roll),0,[1,0,-.5,-1][i]*p];
+      pose[`${finger}_pip`] = [1.5+i*0.2+p*.5,0,0];
+      pose[`${finger}_dip`] = [.7+i*.1,0,0];
+      pose[`${finger}_palm`] = [0,[0,.4,1,1.5][i]*p,0];
     });
     pose.thumb_cmc = [3+2*p,-3*p,-p];
     pose.thumb_mcp = [2,0,0];

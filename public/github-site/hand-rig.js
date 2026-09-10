@@ -59,6 +59,17 @@ export function createHandMesh(data, material) {
     if(old===undefined||z>data.positions[old*3+2])pads.set(cell,i);
   }
   model.userData.contactSamples=[...pads.values()];
+  // Fur can reach the wrist and sides even when they do not support the body.
+  // Keep this coverage separate from the load-bearing palm contact samples.
+  const coatPads=new Map();
+  for(let i=0;i<data.positions.length/3;i++){
+    if(data.normals[i*3+2]<.1)continue;
+    const x=data.positions[i*3],y=data.positions[i*3+1],z=data.positions[i*3+2];
+    const key=`${Math.round(x/.045)},${Math.round(y/.045)}`;
+    const old=coatPads.get(key);
+    if(old===undefined||z>data.positions[old*3+2])coatPads.set(key,i);
+  }
+  model.userData.furSamples=[...coatPads.values()];
   return model;
 }
 

@@ -44,15 +44,12 @@ export function createStrokeSampler(rx,ry,rz) {
     const norm=Math.hypot(...n);const normal=n.map(v=>v/norm);
     const lower=easeStroke(seconds/CONTACT_IN);
     const lift=easeStroke((seconds-CONTACT_OUT)/(STROKE_DURATION-CONTACT_OUT));
-    const clearance=0.095+0.48*(1-lower)+0.48*lift;
+    const clearance=0.045+0.48*(1-lower)+0.48*lift;
     const pressure=easeStroke((seconds-0.35)/0.8)*(1-easeStroke((seconds-CONTACT_OUT)/0.8));
-    // The wrist does not rigidly copy every degree of the small inner sphere.
-    // A broad contact check seats the gently tilted palm without body penetration.
-    const tilt=angle*(0.48+0.24*pressure);
-    const facing=[Math.sin(tilt),Math.cos(tilt),0.12];
-    const facingLength=Math.hypot(...facing);
+    // Follow the contact surface, not a flatter arc that buries the trailing
+    // fingertips and forces the collision guard to lift the entire palm.
     return {
-      root,normal,orientation:facing.map(v=>v/facingLength),
+      root,normal,orientation:normal.slice(),
       palm:root.map((v,i)=>v+normal[i]*clearance),
       tangent:[rx*Math.cos(angle),-ry*Math.sin(angle),0],
       pressure,

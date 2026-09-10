@@ -110,13 +110,28 @@ export function supportPalm(hand,bodyCenter,radii,outward,center,facing) {
     const discriminant=b*b-a*c;
     if(discriminant<=0||b<=0)continue;
     const exit=(-b+Math.sqrt(discriminant))/a;
-    const softness=0.018;
-    lift=Math.max(lift,exit)+softness*Math.log1p(Math.exp(-Math.abs(lift-exit)/softness));
+    // Compact smooth maximum: distant/non-contacting samples add NO lift.
+    // Log-sum-exp accumulated a visible air gap from the sample count alone.
+    const softness=0.003;
+    const blend=Math.max(0,softness-Math.abs(lift-exit))/softness;
+    lift=Math.max(lift,exit)+blend*blend*softness*.25;
   }
   hand.position.addScaledVector(outward,lift);
   hand.userData.supportOffset=lift;
   readPalmFrame(hand,center,facing);
   return lift;
+}
+
+// Palmar skin positions in the common interaction rig, including articulation.
+// Reuse the caller's buffer so contact does not allocate every animation frame.
+export function readContactSurface(hand,target) {
+  const mesh=updateSkinFrame(hand);
+  const samples=hand.userData.model.userData.furSamples;
+  for(let i=0;i<samples.length;i++){
+    readSkinPoint(mesh,samples[i],supportPoint);
+    supportPoint.toArray(target,i*3);
+  }
+  return target;
 }
 
 // Retarget archived pat/squeeze keys around palmar skin, not the mesh origin.
